@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# If running celery or flower, skip Django setup
+if [[ "$1" == "celery" ]] || [[ "$1" == "flower" ]]; then
+  echo "Running command: $@"
+  exec "$@"
+fi
+
 echo "Waiting for PostgreSQL..."
 # Wait for PostgreSQL to be ready
 MAX_ATTEMPTS=30
@@ -17,14 +23,19 @@ done
 
 echo "PostgreSQL is up - executing migrations"
 
-# Run database migrations
+# Run database migrations (only for web service)
 python3 manage.py migrate --noinput
 
 # Collect static files
 echo "Collecting static files..."
-python3 manage.py collectstatic --noinput
+python3 manage.py collectstatic --noinput || echo "Warning: collectstatic failed, continuing anyway..."
 
-# Start server based on DEBUG mode
+# If a command was provided, execute it
+if [ $# -gt 0 ]; then
+  exec "$@"
+fi
+
+# Otherwise, start server based on DEBUG mode
 if [ "$DEBUG" = "True" ]; then
   echo "Starting Django development server..."
   exec python3 manage.py runserver 0.0.0.0:8000

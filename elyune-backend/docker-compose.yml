@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
@@ -63,7 +61,7 @@ services:
     container_name: elyune_web
     command: /app/docker-entrypoint.sh
     volumes:
-      - .:/app
+      # - .:/app  # Commented out: overwrites venv in container
       - static_volume:/app/staticfiles
     ports:
       - "8000:8000"
@@ -97,6 +95,31 @@ services:
     networks:
       - elyune_network
     restart: unless-stopped
+    develop:
+      watch:
+        # Sync Python source files for hot-reload (Django auto-reloader)
+        - action: sync
+          path: ./
+          target: /app
+          ignore:
+            - .venv/
+            - __pycache__/
+            - "*.pyc"
+            - "*.pyo"
+            - "*.pyd"
+            - .git/
+            - .gitignore
+            - .dockerignore
+            - Dockerfile
+            - docker-compose.yml
+            - .env
+            - .env.example
+            - "*.md"
+            - .claude/
+            - staticfiles/
+        # Rebuild container when dependencies change
+        - action: rebuild
+          path: ./requirements.txt
 
   celery_worker:
     build:
@@ -105,7 +128,7 @@ services:
     container_name: elyune_celery_worker
     command: celery -A config worker -l info --concurrency=2
     volumes:
-      - .:/app
+      # - .:/app  # Commented out: overwrites venv in container
       - /tmp:/tmp
     environment:
       SECRET_KEY: ${SECRET_KEY}
@@ -133,6 +156,31 @@ services:
     networks:
       - elyune_network
     restart: unless-stopped
+    develop:
+      watch:
+        # Sync Python source files (Celery needs restart to pick up changes)
+        - action: sync+restart
+          path: ./
+          target: /app
+          ignore:
+            - .venv/
+            - __pycache__/
+            - "*.pyc"
+            - "*.pyo"
+            - "*.pyd"
+            - .git/
+            - .gitignore
+            - .dockerignore
+            - Dockerfile
+            - docker-compose.yml
+            - .env
+            - .env.example
+            - "*.md"
+            - .claude/
+            - staticfiles/
+        # Rebuild container when dependencies change
+        - action: rebuild
+          path: ./requirements.txt
 
   flower:
     build:
