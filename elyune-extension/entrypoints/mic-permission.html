@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Microphone Permission</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      max-width: 400px;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 20px 0;
+      font-size: 24px;
+      color: #333;
+    }
+
+    p {
+      margin: 0 0 30px 0;
+      color: #666;
+      line-height: 1.6;
+    }
+
+    button {
+      padding: 12px 30px;
+      background: #0073e6;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #005ba4;
+    }
+
+    .status {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .mic-icon {
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="mic-icon">🎤</div>
+    <h1>Microphone Permission Required</h1>
+    <p>Click the button below to grant microphone access. This permission is needed to record audio during screen recording.</p>
+    <button id="requestBtn">Grant Microphone Access</button>
+    <div id="status"></div>
+  </div>
+
+  <script type="module">
+    const requestBtn = document.getElementById('requestBtn');
+    const statusDiv = document.getElementById('status');
+
+    requestBtn.addEventListener('click', async () => {
+      try {
+        console.log('[MicPermission] Requesting microphone permission...');
+        statusDiv.textContent = 'Requesting permission...';
+        statusDiv.className = 'status';
+
+        // Request microphone permission
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+
+        console.log('[MicPermission] ✅ Permission granted!');
+
+        // Stop the stream immediately
+        stream.getTracks().forEach(track => track.stop());
+
+        // Get available devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+
+        console.log('[MicPermission] Found devices:', audioInputs);
+
+        // Save to storage
+        await browser.storage.local.set({
+          microphoneEnabled: true,
+          microphonePermissionGranted: true,
+          selectedMicrophoneDeviceId: audioInputs[0]?.deviceId
+        });
+
+        // Show success
+        statusDiv.textContent = '✅ Permission granted! This window will close in 2 seconds...';
+        statusDiv.className = 'status success';
+
+        // Close this tab after 2 seconds
+        setTimeout(() => {
+          window.close();
+        }, 2000);
+
+      } catch (error) {
+        console.error('[MicPermission] ❌ Permission denied:', error);
+        statusDiv.textContent = '❌ Permission denied. Please allow microphone access and try again.';
+        statusDiv.className = 'status error';
+      }
+    });
+  </script>
+</body>
+</html>

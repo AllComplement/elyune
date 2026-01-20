@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run compile:*)",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(cat:*)",
+      "Bash(node generate-icons.js:*)",
+      "Bash(grep:*)",
+      "Bash(uv pip install:*)",
+      "Bash(uv venv:*)",
+      "Bash(uv run:*)",
+      "Bash(uv pip freeze:*)",
+      "Bash(chmod:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose logs:*)"
+    ]
+  }
+}

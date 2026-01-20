@@ -1,0 +1,157 @@
+.popup-container {
+  width: 300px;
+  padding: 20px;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+h1 {
+  font-size: 20px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.button-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-start {
+  background-color: #0073e6;
+  color: white;
+}
+
+.btn-start:hover:not(:disabled) {
+  background-color: #005ba4;
+}
+
+.btn-stop {
+  background-color: #dc3545;
+  color: white;
+}
+
+.btn-stop:hover:not(:disabled) {
+  background-color: #c82333;
+}
+
+.recording-status {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+  color: #856404;
+}
+
+.mic-toggle-container {
+  margin-top: 15px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-checkbox {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  appearance: none;
+  background-color: #ccc;
+  border-radius: 12px;
+  outline: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.toggle-checkbox:checked {
+  background-color: #0073e6;
+}
+
+.toggle-checkbox:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggle-checkbox::before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: white;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+}
+
+.toggle-checkbox:checked::before {
+  transform: translateX(20px);
+}
+
+.toggle-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.device-selector-container {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #dee2e6;
+}
+
+.device-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6c757d;
+  margin-bottom: 6px;
+}
+
+.device-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.device-select:hover {
+  border-color: #0073e6;
+}
+
+.device-select:focus {
+  outline: none;
+  border-color: #0073e6;
+  box-shadow: 0 0 0 2px rgba(0, 115, 230, 0.1);
+}

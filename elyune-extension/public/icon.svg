@@ -1,0 +1,31 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle with gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="screenGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:0.3" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="64" cy="64" r="60" fill="url(#bgGradient)"/>
+
+  <!-- Screen/Monitor -->
+  <rect x="32" y="36" width="64" height="44" rx="4" fill="white" opacity="0.95"/>
+  <rect x="36" y="40" width="56" height="36" rx="2" fill="url(#screenGradient)"/>
+
+  <!-- Record button (circle) -->
+  <circle cx="64" cy="58" r="12" fill="#ef4444"/>
+  <circle cx="64" cy="58" r="12" fill="#ef4444" opacity="0.5">
+    <animate attributeName="r" values="12;14;12" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.5;0.2;0.5" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Monitor stand -->
+  <rect x="58" y="80" width="12" height="8" rx="1" fill="white" opacity="0.9"/>
+  <rect x="48" y="88" width="32" height="3" rx="1.5" fill="white" opacity="0.9"/>
+</svg>
