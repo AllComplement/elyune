@@ -1,3 +1,5 @@
+import { getAuthState, getBackendUrl } from './popup/services/storage';
+
 export default defineBackground(() => {
   console.log('Background service worker initialized');
 
@@ -40,6 +42,34 @@ export default defineBackground(() => {
       return;
     }
 
+    if (message.type === 'upload-complete') {
+      console.log('[Background] ✅ Upload complete:', message.filename);
+
+      // Show notification
+      await chrome.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icon/128.png'),
+        title: 'Recording Uploaded',
+        message: `${message.filename} uploaded successfully`,
+      });
+
+      return;
+    }
+
+    if (message.type === 'upload-error') {
+      console.error('[Background] ❌ Upload failed:', message.error);
+
+      // Show notification
+      await chrome.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icon/128.png'),
+        title: 'Upload Failed',
+        message: `Failed to upload recording: ${message.error}`,
+      });
+
+      return;
+    }
+
     if (message.type === 'download-recording') {
       console.log('[Background] Download request received for:', message.filename);
       console.log('[Background] Blob size:', message.blobSize, 'bytes');
@@ -59,10 +89,40 @@ export default defineBackground(() => {
 
         console.log('[Background] Download verified complete');
 
-        // Notify offscreen to clean up
-        await browser.runtime.sendMessage({
-          type: 'download-complete',
-        });
+        // Check if user is authenticated and initiate upload
+        try {
+          const authState = await getAuthState();
+          if (authState.isAuthenticated && authState.authToken && authState.refreshToken) {
+            console.log('[Background] User authenticated, requesting upload...');
+
+            const backendUrl = await getBackendUrl();
+
+            // Request offscreen to upload before cleaning up
+            await browser.runtime.sendMessage({
+              type: 'upload-recording',
+              filename: message.filename,
+              authToken: authState.authToken,
+              refreshToken: authState.refreshToken,
+              backendUrl,
+            });
+
+            console.log('[Background] Upload request sent to offscreen');
+          } else {
+            console.log('[Background] User not authenticated, skipping upload');
+
+            // If not authenticated, proceed with cleanup immediately
+            await browser.runtime.sendMessage({
+              type: 'download-complete',
+            });
+          }
+        } catch (uploadError) {
+          console.error('[Background] Failed to initiate upload:', uploadError);
+
+          // Continue with cleanup even if upload fails
+          await browser.runtime.sendMessage({
+            type: 'download-complete',
+          });
+        }
 
         // Notify that recording is complete
         await browser.runtime.sendMessage({

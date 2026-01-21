@@ -83,6 +83,43 @@ const MIN_HEADROOM = 25 * 1024 * 1024; // 25MB minimum
 browser.runtime.onMessage.addListener(async (message) => {
   console.log('Offscreen received message:', message.name || message.type);
 
+  // Handle upload request from background
+  if (message.type === 'upload-recording') {
+    console.log('[Offscreen] Upload request received');
+
+    try {
+      await handleUpload(
+        message.filename,
+        message.authToken,
+        message.refreshToken,
+        message.backendUrl
+      );
+
+      console.log('[Offscreen] Upload completed successfully');
+
+      // Notify background of success
+      await browser.runtime.sendMessage({
+        type: 'upload-complete',
+        filename: message.filename,
+      });
+    } catch (error) {
+      console.error('[Offscreen] Upload failed:', error);
+
+      // Notify background of error
+      await browser.runtime.sendMessage({
+        type: 'upload-error',
+        error: error instanceof Error ? error.message : 'Upload failed',
+      });
+    } finally {
+      // Clean up regardless of upload success/failure
+      await browser.runtime.sendMessage({
+        type: 'download-complete',
+      });
+    }
+
+    return;
+  }
+
   // Handle download completion from background
   if (message.type === 'download-complete') {
     console.log('[Offscreen] Download complete, cleaning up...');
@@ -703,6 +740,106 @@ async function clearChunks() {
   } catch (error) {
     console.error('Failed to clear chunks:', error);
   }
+}
+
+async function handleUpload(
+  filename: string,
+  authToken: string,
+  refreshToken: string,
+  backendUrl: string
+) {
+  console.log('[Offscreen] Starting upload process for:', filename);
+
+  // Step 1: Rebuild blob from IndexedDB chunks
+  console.log('[Offscreen] Rebuilding blob from chunks...');
+  const chunks: Blob[] = [];
+  for (let i = 0; i < state.chunkIndex; i++) {
+    const item = await chunksStore.getItem<{ chunk: Blob }>(`chunk_${i}`);
+    if (item) {
+      chunks.push(item.chunk);
+    } else {
+      console.warn(`[Offscreen] Chunk ${i} not found during upload`);
+    }
+  }
+
+  if (chunks.length === 0) {
+    throw new Error('No recording data available for upload');
+  }
+
+  const mimeType = getSupportedMimeType();
+  const blob = new Blob(chunks, { type: mimeType });
+  console.log('[Offscreen] Blob rebuilt - size:', blob.size, 'bytes');
+
+  // Step 2: Determine recording metadata
+  const metadata = {
+    filename,
+    file_size: blob.size,
+    quality: state.quality,
+    fps: state.fps,
+    has_system_audio: state.stream ? state.stream.getAudioTracks().length > 0 : false,
+    has_microphone: state.micEnabled,
+    codec: mimeType,
+  };
+
+  console.log('[Offscreen] Recording metadata:', metadata);
+
+  // Step 3: Request upload URL from backend
+  console.log('[Offscreen] Requesting upload URL from backend...');
+  const uploadUrlResponse = await fetch(`${backendUrl}/api/v1/recordings/request-upload/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`,
+    },
+    body: JSON.stringify(metadata),
+  });
+
+  if (!uploadUrlResponse.ok) {
+    const errorText = await uploadUrlResponse.text();
+    throw new Error(`Failed to request upload URL: ${uploadUrlResponse.status} - ${errorText}`);
+  }
+
+  const uploadData = await uploadUrlResponse.json();
+  console.log('[Offscreen] Got upload URL, recording ID:', uploadData.recording_id);
+
+  // Step 4: Upload blob to presigned URL (MinIO S3)
+  console.log('[Offscreen] Uploading blob to S3...');
+  const uploadResponse = await fetch(uploadData.upload_url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': mimeType,
+    },
+    body: blob,
+  });
+
+  if (!uploadResponse.ok) {
+    throw new Error(`Failed to upload to S3: ${uploadResponse.status}`);
+  }
+
+  console.log('[Offscreen] Blob uploaded to S3 successfully');
+
+  // Step 5: Notify backend that upload is complete
+  console.log('[Offscreen] Notifying backend upload complete...');
+  const completeResponse = await fetch(
+    `${backendUrl}/api/v1/recordings/${uploadData.recording_id}/upload-complete/`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        s3_key: uploadData.s3_key,
+      }),
+    }
+  );
+
+  if (!completeResponse.ok) {
+    const errorText = await completeResponse.text();
+    throw new Error(`Failed to notify upload complete: ${completeResponse.status} - ${errorText}`);
+  }
+
+  console.log('[Offscreen] Backend notified, upload process complete');
 }
 
 // Quality and codec utilities

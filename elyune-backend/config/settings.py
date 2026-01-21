@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'storages',
     # Project apps
+    'accounts',
     'recordings',
     'processing',
     'analysis',
