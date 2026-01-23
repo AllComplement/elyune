@@ -51,22 +51,27 @@ def process_recording_pipeline(self, recording_id):
         recording.status = 'processing'
         recording.save()
 
-        # Create processing job
-        job = ProcessingJob.objects.create(
+        # Create or update processing job
+        job, created = ProcessingJob.objects.update_or_create(
             recording=recording,
-            celery_task_id=self.request.id,
-            status='running',
-            started_at=timezone.now()
+            defaults={
+                'celery_task_id': self.request.id,
+                'status': 'running',
+                'started_at': timezone.now(),
+                'completed_at': None,
+                'error_message': ''
+            }
         )
 
         logger.info(f"Started processing pipeline for recording {recording_id}")
 
         # Chain tasks: conversion → extraction → transcription → analysis
+        # Note: subsequent tasks receive the return value (recording_id) from the previous task
         workflow = chain(
             convert_webm_to_mp4.s(recording_id),
-            extract_audio_from_video.s(recording_id),
-            transcribe_audio.s(recording_id),
-            analyze_transcription.s(recording_id)
+            extract_audio_from_video.s(),
+            transcribe_audio.s(),
+            analyze_transcription.s()
         )
 
         workflow.apply_async()
@@ -88,12 +93,15 @@ def convert_webm_to_mp4(self, recording_id):
         recording = Recording.objects.get(id=recording_id)
         job = recording.processing_job
 
-        # Create processing step
-        step = ProcessingStep.objects.create(
+        # Create or update processing step
+        step, _ = ProcessingStep.objects.update_or_create(
             job=job,
             step_name='video_conversion',
-            status='running',
-            started_at=timezone.now()
+            defaults={
+                'status': 'running',
+                'started_at': timezone.now(),
+                'error_message': ''
+            }
         )
 
         logger.info(f"Starting video conversion for {recording_id}")
@@ -131,13 +139,15 @@ def convert_webm_to_mp4(self, recording_id):
         s3_key = f"recordings/{recording_id}/converted.mp4"
         upload_to_s3(mp4_path, s3_key)
 
-        # Save file reference
-        RecordingFile.objects.create(
+        # Save file reference (idempotent)
+        RecordingFile.objects.update_or_create(
             recording=recording,
             file_type='converted_mp4',
-            s3_key=s3_key,
-            s3_bucket=settings.AWS_STORAGE_BUCKET_NAME,
-            file_size_bytes=os.path.getsize(mp4_path)
+            defaults={
+                's3_key': s3_key,
+                's3_bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                'file_size_bytes': os.path.getsize(mp4_path)
+            }
         )
 
         # Update step
@@ -173,12 +183,15 @@ def extract_audio_from_video(self, recording_id):
         recording = Recording.objects.get(id=recording_id)
         job = recording.processing_job
 
-        # Create processing step
-        step = ProcessingStep.objects.create(
+        # Create or update processing step
+        step, _ = ProcessingStep.objects.update_or_create(
             job=job,
             step_name='audio_extraction',
-            status='running',
-            started_at=timezone.now()
+            defaults={
+                'status': 'running',
+                'started_at': timezone.now(),
+                'error_message': ''
+            }
         )
 
         logger.info(f"Starting audio extraction for {recording_id}")
@@ -215,13 +228,15 @@ def extract_audio_from_video(self, recording_id):
         s3_key = f"recordings/{recording_id}/audio.wav"
         upload_to_s3(audio_path, s3_key)
 
-        # Save file reference
-        RecordingFile.objects.create(
+        # Save file reference (idempotent)
+        RecordingFile.objects.update_or_create(
             recording=recording,
             file_type='audio_extract',
-            s3_key=s3_key,
-            s3_bucket=settings.AWS_STORAGE_BUCKET_NAME,
-            file_size_bytes=os.path.getsize(audio_path)
+            defaults={
+                's3_key': s3_key,
+                's3_bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                'file_size_bytes': os.path.getsize(audio_path)
+            }
         )
 
         # Update step
@@ -257,12 +272,15 @@ def transcribe_audio(self, recording_id):
         recording = Recording.objects.get(id=recording_id)
         job = recording.processing_job
 
-        # Create processing step
-        step = ProcessingStep.objects.create(
+        # Create or update processing step
+        step, _ = ProcessingStep.objects.update_or_create(
             job=job,
             step_name='speech_to_text',
-            status='running',
-            started_at=timezone.now()
+            defaults={
+                'status': 'running',
+                'started_at': timezone.now(),
+                'error_message': ''
+            }
         )
 
         logger.info(f"Starting transcription for {recording_id}")
@@ -307,22 +325,29 @@ def transcribe_audio(self, recording_id):
 
         # Extract results
         result = response.results.channels[0].alternatives[0]
+        utterances = response.results.utterances if hasattr(response.results, 'utterances') else []
 
-        # Create Transcription
-        transcription = Transcription.objects.create(
+        # Create or update Transcription
+        transcription, created = Transcription.objects.update_or_create(
             recording=recording,
-            full_text=result.transcript,
-            confidence_score=result.confidence,
-            language_detected=response.metadata.language if hasattr(response.metadata, 'language') else 'en',
-            num_speakers=len(set(u.speaker for u in result.utterances)) if result.utterances else 0,
-            audio_duration_seconds=response.metadata.duration,
-            processing_time_seconds=processing_time,
-            deepgram_response=response.to_dict()
+            defaults={
+                'full_text': result.transcript,
+                'confidence_score': result.confidence,
+                'language_detected': response.metadata.language if hasattr(response.metadata, 'language') else 'en',
+                'num_speakers': len(set(u.speaker for u in utterances)) if utterances else 0,
+                'audio_duration_seconds': response.metadata.duration,
+                'processing_time_seconds': processing_time,
+                'deepgram_response': response.to_dict()
+            }
         )
 
+        # Clear existing segments if updating (to ensure clean slate for segments)
+        if not created:
+            transcription.segments.all().delete()
+
         # Create segments from utterances
-        if result.utterances:
-            for utterance in result.utterances:
+        if utterances:
+            for utterance in utterances:
                 TranscriptionSegment.objects.create(
                     transcription=transcription,
                     start_time_seconds=utterance.start,
@@ -376,12 +401,15 @@ def analyze_transcription(self, recording_id):
         job = recording.processing_job
         transcription = recording.transcription
 
-        # Create processing step
-        step = ProcessingStep.objects.create(
+        # Create or update processing step
+        step, _ = ProcessingStep.objects.update_or_create(
             job=job,
             step_name='ai_analysis',
-            status='running',
-            started_at=timezone.now()
+            defaults={
+                'status': 'running',
+                'started_at': timezone.now(),
+                'error_message': ''
+            }
         )
 
         logger.info(f"Starting AI analysis for {recording_id}")
@@ -394,61 +422,78 @@ def analyze_transcription(self, recording_id):
 
         # Configure Gemini
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Fallback to gemini-2.0-flash if 2.5 is unavailable
+        model_name = 'gemini-2.5-flash'
+        try:
+            model = genai.GenerativeModel(model_name)
+            # Simple test generation to verify model availability
+            model.generate_content("test")
+        except Exception as e:
+            logger.warning(f"Failed to use {model_name}, falling back to gemini-2.0-flash: {e}")
+            model_name = 'gemini-2.0-flash'
+            model = genai.GenerativeModel(model_name)
 
         # Prepare transcript with speaker info
         formatted_transcript = format_transcript_with_speakers(transcription)
 
         # 1. Generate Summary
         summary_result = generate_summary(model, formatted_transcript)
-        AIAnalysis.objects.create(
+        AIAnalysis.objects.update_or_create(
             recording=recording,
             analysis_type='summary',
-            result_data=summary_result['data'],
-            result_text=summary_result['text'],
-            model_version='gemini-1.5-flash',
-            tokens_used=summary_result.get('tokens', 0),
-            processing_time_seconds=summary_result['time'],
-            gemini_response=summary_result.get('response', {})
+            defaults={
+                'result_data': summary_result['data'],
+                'result_text': summary_result['text'],
+                'model_version': model_name,
+                'tokens_used': summary_result.get('tokens', 0),
+                'processing_time_seconds': summary_result['time'],
+                'gemini_response': summary_result.get('response', {})
+            }
         )
 
         # 2. Extract Action Items
         action_items_result = extract_action_items(model, formatted_transcript)
-        AIAnalysis.objects.create(
+        AIAnalysis.objects.update_or_create(
             recording=recording,
             analysis_type='action_items',
-            result_data=action_items_result['data'],
-            result_text=action_items_result['text'],
-            model_version='gemini-1.5-flash',
-            tokens_used=action_items_result.get('tokens', 0),
-            processing_time_seconds=action_items_result['time'],
-            gemini_response=action_items_result.get('response', {})
+            defaults={
+                'result_data': action_items_result['data'],
+                'result_text': action_items_result['text'],
+                'model_version': model_name,
+                'tokens_used': action_items_result.get('tokens', 0),
+                'processing_time_seconds': action_items_result['time'],
+                'gemini_response': action_items_result.get('response', {})
+            }
         )
 
         # 3. Extract Key Points
         key_points_result = extract_key_points(model, formatted_transcript)
-        AIAnalysis.objects.create(
+        AIAnalysis.objects.update_or_create(
             recording=recording,
             analysis_type='key_points',
-            result_data=key_points_result['data'],
-            result_text=key_points_result['text'],
-            model_version='gemini-1.5-flash',
-            tokens_used=key_points_result.get('tokens', 0),
-            processing_time_seconds=key_points_result['time'],
-            gemini_response=key_points_result.get('response', {})
+            defaults={
+                'result_data': key_points_result['data'],
+                'result_text': key_points_result['text'],
+                'model_version': model_name,
+                'tokens_used': key_points_result.get('tokens', 0),
+                'processing_time_seconds': key_points_result['time'],
+                'gemini_response': key_points_result.get('response', {})
+            }
         )
 
         # 4. Sentiment Analysis
         sentiment_result = analyze_sentiment(model, formatted_transcript)
-        AIAnalysis.objects.create(
+        AIAnalysis.objects.update_or_create(
             recording=recording,
             analysis_type='sentiment',
-            result_data=sentiment_result['data'],
-            result_text=sentiment_result['text'],
-            model_version='gemini-1.5-flash',
-            tokens_used=sentiment_result.get('tokens', 0),
-            processing_time_seconds=sentiment_result['time'],
-            gemini_response=sentiment_result.get('response', {})
+            defaults={
+                'result_data': sentiment_result['data'],
+                'result_text': sentiment_result['text'],
+                'model_version': model_name,
+                'tokens_used': sentiment_result.get('tokens', 0),
+                'processing_time_seconds': sentiment_result['time'],
+                'gemini_response': sentiment_result.get('response', {})
+            }
         )
 
         # Update step
@@ -479,9 +524,10 @@ def analyze_transcription(self, recording_id):
             step.save()
 
         # Mark recording as failed
-        recording.status = 'failed'
-        recording.error_message = str(exc)
-        recording.save()
+        if 'recording' in locals():
+            recording.status = 'failed'
+            recording.error_message = str(exc)
+            recording.save()
 
         raise self.retry(exc=exc, countdown=180)
 
