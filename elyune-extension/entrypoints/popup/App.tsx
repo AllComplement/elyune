@@ -21,6 +21,7 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Public routes */}
+      <Route path="/settings" element={<SettingsScreen />} />
       <Route
         path="/login"
         element={
@@ -39,12 +40,6 @@ function AppRoutes() {
         path="/"
         element={
           isAuthenticated ? <RecordingScreen /> : <Navigate to="/login" replace />
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          isAuthenticated ? <SettingsScreen /> : <Navigate to="/login" replace />
         }
       />
 

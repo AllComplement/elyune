@@ -76,22 +76,26 @@ class RecordingViewSet(viewsets.ModelViewSet):
         s3_key = f"recordings/{recording.id}/{data['filename']}"
 
         try:
-            # Initialize S3 client for MinIO
-            s3_client = boto3.client(
+            # Initialize S3 client for MinIO (Public Endpoint for Signing)
+            # We must use the public endpoint for signing so the signature matches
+            # the URL the browser will use.
+            s3_client_public = boto3.client(
                 's3',
-                endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+                endpoint_url=settings.AWS_S3_PUBLIC_ENDPOINT_URL,
                 aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
                 config=boto3.session.Config(signature_version='s3v4')
             )
 
             # Generate presigned URL for PUT operation
-            presigned_url = s3_client.generate_presigned_url(
+            # We exclude ContentType from the signature params to allow the browser
+            # flexibility (e.g. if it adds charset or if headers are slightly different)
+            # The Content-Type header will still be sent by the browser, but not verified against signature.
+            presigned_url = s3_client_public.generate_presigned_url(
                 'put_object',
                 Params={
                     'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
                     'Key': s3_key,
-                    'ContentType': 'video/webm'
                 },
                 ExpiresIn=3600  # 1 hour
             )

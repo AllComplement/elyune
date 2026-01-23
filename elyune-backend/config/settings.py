@@ -165,6 +165,9 @@ if USE_MINIO:
     AWS_SECRET_ACCESS_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
     AWS_STORAGE_BUCKET_NAME = os.getenv('MINIO_BUCKET_NAME', 'media')
     AWS_S3_ENDPOINT_URL = f"http://{os.getenv('MINIO_ENDPOINT', 'minio:9000')}"
+    # Public endpoint for browser access (presigned URLs)
+    AWS_S3_PUBLIC_ENDPOINT_URL = os.getenv('MINIO_PUBLIC_ENDPOINT', AWS_S3_ENDPOINT_URL)
+    
     AWS_S3_USE_SSL = os.getenv('MINIO_USE_SSL', 'False') == 'True'
     AWS_S3_VERIFY = False
     AWS_S3_SIGNATURE_VERSION = 's3v4'
@@ -207,6 +210,10 @@ CORS_ALLOWED_ORIGINS = os.getenv(
     'CORS_ALLOWED_ORIGINS',
     'http://localhost:3000,http://127.0.0.1:3000'
 ).split(',')
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^chrome-extension://.*$',
+]
 
 CORS_ALLOW_CREDENTIALS = True
 

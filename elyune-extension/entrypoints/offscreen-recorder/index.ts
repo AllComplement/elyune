@@ -801,6 +801,7 @@ async function handleUpload(
 
   const uploadData = await uploadUrlResponse.json();
   console.log('[Offscreen] Got upload URL, recording ID:', uploadData.recording_id);
+  console.log('[Offscreen] Upload URL:', uploadData.upload_url);
 
   // Step 4: Upload blob to presigned URL (MinIO S3)
   console.log('[Offscreen] Uploading blob to S3...');
@@ -813,7 +814,10 @@ async function handleUpload(
   });
 
   if (!uploadResponse.ok) {
-    throw new Error(`Failed to upload to S3: ${uploadResponse.status}`);
+    const errorText = await uploadResponse.text();
+    console.error(`[Offscreen] Failed to upload to S3: ${uploadResponse.status}`);
+    console.error(`[Offscreen] Error Body: ${errorText}`);
+    throw new Error(`Failed to upload to S3: ${uploadResponse.status} - ${errorText}`);
   }
 
   console.log('[Offscreen] Blob uploaded to S3 successfully');

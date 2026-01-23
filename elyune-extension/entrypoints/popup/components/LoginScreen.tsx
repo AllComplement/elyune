@@ -50,10 +50,24 @@ export function LoginScreen() {
     navigate('/signup');
   };
 
+  const handleSettingsClick = () => {
+    navigate('/settings');
+  };
+
   return (
     <div className="auth-container">
-      <div className="auth-header">
+      <div className="recording-header">
         <h1>Login</h1>
+        <button
+          type="button"
+          onClick={handleSettingsClick}
+          className="settings-icon-btn"
+          title="Settings"
+        >
+          ⚙️
+        </button>
+      </div>
+      <div className="auth-header-text" style={{ marginBottom: '20px', textAlign: 'center', color: '#6c757d', fontSize: '13px' }}>
         <p>Sign in to sync your recordings</p>
       </div>
 

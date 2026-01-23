@@ -31,8 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Initialize API client
         if (authState.isAuthenticated && authState.authToken && authState.refreshToken) {
-          apiClient.setAuthToken(authState.authToken);
-          apiClient.setRefreshToken(authState.refreshToken);
+          apiClient.setAuthTokens(authState.authToken, authState.refreshToken);
         }
       } catch (error) {
         console.error('Failed to initialize auth:', error);
@@ -46,16 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (authToken: string, refreshToken: string, user: User) => {
     await saveAuthState(authToken, refreshToken, user);
-    apiClient.setAuthToken(authToken);
-    apiClient.setRefreshToken(refreshToken);
+    apiClient.setAuthTokens(authToken, refreshToken);
     setIsAuthenticated(true);
     setUser(user);
   };
 
   const logout = async () => {
     await removeAuthState();
-    apiClient.setAuthToken(null);
-    apiClient.setRefreshToken(null);
+    apiClient.setAuthTokens(null, null);
     setIsAuthenticated(false);
     setUser(null);
   };

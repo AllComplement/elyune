@@ -42,7 +42,7 @@ class ApiClient {
   /**
    * Set authentication tokens
    */
-  setAuthTokens(accessToken: string, refreshToken: string): void {
+  setAuthTokens(accessToken: string | null, refreshToken: string | null): void {
     this.authToken = accessToken;
     this.refreshToken = refreshToken;
   }
@@ -222,16 +222,27 @@ class ApiClient {
    * Upload file to presigned URL
    */
   async uploadToPresignedUrl(url: string, blob: Blob): Promise<void> {
-    const response = await fetch(url, {
-      method: 'PUT',
-      body: blob,
-      headers: {
-        'Content-Type': 'video/webm',
-      },
-    });
+    console.log('[API] Uploading to presigned URL:', url);
+    console.log('[API] Blob type:', blob.type, 'Size:', blob.size);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'PUT',
+        body: blob,
+        headers: {
+          'Content-Type': 'video/webm',
+        },
+      });
 
-    if (!response.ok) {
-      throw new Error(`Upload failed with status ${response.status}`);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('[API] Upload failed status:', response.status);
+        console.error('[API] Upload failed body:', text);
+        throw new Error(`Failed to upload to S3: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('[API] Upload fetch error:', error);
+      throw error;
     }
   }
 

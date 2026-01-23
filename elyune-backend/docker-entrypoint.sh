@@ -30,6 +30,10 @@ python3 manage.py migrate --noinput
 echo "Collecting static files..."
 python3 manage.py collectstatic --noinput || echo "Warning: collectstatic failed, continuing anyway..."
 
+# Initialize MinIO (Buckets & CORS)
+echo "Initializing MinIO..."
+python3 init_minio.py || echo "Warning: MinIO initialization failed"
+
 # If a command was provided, execute it
 if [ $# -gt 0 ]; then
   exec "$@"
