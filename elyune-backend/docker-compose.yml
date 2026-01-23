@@ -18,6 +18,17 @@ services:
     networks:
       - elyune_network
 
+  adminer:
+    image: adminer
+    container_name: elyune_adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - elyune_network
+    depends_on:
+      - db
+    restart: unless-stopped
+
   minio:
     image: minio/minio:latest
     container_name: elyune_minio
@@ -68,7 +79,8 @@ services:
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG:-True}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0,miniserver.kanyu-godzilla.ts.net}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000,https://miniserver.kanyu-godzilla.ts.net}
       POSTGRES_DB: ${POSTGRES_DB:-elyune_db}
       POSTGRES_USER: ${POSTGRES_USER:-elyune_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-elyune_password}
