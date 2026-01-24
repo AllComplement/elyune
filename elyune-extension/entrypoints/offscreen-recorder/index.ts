@@ -92,7 +92,8 @@ browser.runtime.onMessage.addListener(async (message) => {
         message.filename,
         message.authToken,
         message.refreshToken,
-        message.backendUrl
+        message.backendUrl,
+        message.blobUrl  // Pass blobUrl for direct upload
       );
 
       console.log('[Offscreen] Upload completed successfully');
@@ -747,31 +748,51 @@ async function handleUpload(
   filename: string,
   authToken: string,
   refreshToken: string,
-  backendUrl: string
+  backendUrl: string,
+  blobUrl?: string  // Optional: URL to fetch blob from (for direct upload)
 ) {
   console.log('[Offscreen] Starting upload process for:', filename);
 
-  // Step 1: Rebuild blob from IndexedDB chunks
-  console.log('[Offscreen] Rebuilding blob from chunks...');
-  const chunks: Blob[] = [];
-  for (let i = 0; i < state.chunkIndex; i++) {
-    const item = await chunksStore.getItem<{ chunk: Blob }>(`chunk_${i}`);
-    if (item) {
-      chunks.push(item.chunk);
-    } else {
-      console.warn(`[Offscreen] Chunk ${i} not found during upload`);
-    }
-  }
-
-  if (chunks.length === 0) {
-    throw new Error('No recording data available for upload');
-  }
-
+  let blob: Blob;
   const mimeType = getSupportedMimeType();
-  const blob = new Blob(chunks, { type: mimeType });
-  console.log('[Offscreen] Blob rebuilt - size:', blob.size, 'bytes');
 
-  // Step 2: Determine recording metadata
+  // Step 1: Get blob - either from URL or rebuild from IndexedDB
+  if (blobUrl) {
+    // Direct upload - fetch blob from URL (authenticated user flow)
+    console.log('[Offscreen] Direct upload - fetching blob from URL:', blobUrl);
+    try {
+      const response = await fetch(blobUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch blob: ${response.status}`);
+      }
+      blob = await response.blob();
+      console.log('[Offscreen] Blob fetched from URL - size:', blob.size, 'bytes');
+    } catch (error) {
+      console.error('[Offscreen] Failed to fetch blob from URL:', error);
+      throw new Error(`Failed to fetch recording data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  } else {
+    // After download - rebuild from IndexedDB chunks (anonymous user flow)
+    console.log('[Offscreen] Rebuilding blob from chunks...');
+    const chunks: Blob[] = [];
+    for (let i = 0; i < state.chunkIndex; i++) {
+      const item = await chunksStore.getItem<{ chunk: Blob }>(`chunk_${i}`);
+      if (item) {
+        chunks.push(item.chunk);
+      } else {
+        console.warn(`[Offscreen] Chunk ${i} not found during upload`);
+      }
+    }
+
+    if (chunks.length === 0) {
+      throw new Error('No recording data available for upload');
+    }
+
+    blob = new Blob(chunks, { type: mimeType });
+    console.log('[Offscreen] Blob rebuilt - size:', blob.size, 'bytes');
+  }
+
+  // Step 2: Determine recording metadata from blob
   const metadata = {
     filename,
     file_size: blob.size,

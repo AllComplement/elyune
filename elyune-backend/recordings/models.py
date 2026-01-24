@@ -22,7 +22,7 @@ class Recording(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recordings')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recordings', null=True, blank=True)
 
     # Recording metadata from extension
     title = models.CharField(max_length=255, blank=True)
@@ -87,7 +87,7 @@ class RecordingFile(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recording = models.ForeignKey(Recording, on_delete=models.CASCADE, related_name='files')
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recording_files')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recording_files', null=True, blank=True)
 
     file_type = models.CharField(max_length=20, choices=FILE_TYPE_CHOICES)
     s3_key = models.CharField(max_length=500)
@@ -111,7 +111,7 @@ class RecordingAnalysis(models.Model):
     """Consolidated transcription and AI analysis results"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recording = models.OneToOneField(Recording, on_delete=models.CASCADE, related_name='analysis')
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recording_analyses')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recording_analyses', null=True, blank=True)
 
     # ===== TRANSCRIPTION FIELDS (from Transcription model) =====
     transcription_text = models.TextField(blank=True, help_text='Full transcript text')

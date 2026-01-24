@@ -80,50 +80,44 @@ export default defineBackground(() => {
       console.log('[Background] Blob size:', message.blobSize, 'bytes');
 
       try {
-        // Download using chrome.downloads API (only available in background)
-        const downloadId = await chrome.downloads.download({
-          url: message.blobUrl,
-          filename: message.filename,
-          saveAs: true,
-        });
+        // Check if user is authenticated
+        const authState = await getAuthState();
+        
+        if (authState.isAuthenticated && authState.authToken && authState.refreshToken) {
+          // User is logged in - skip download and upload directly
+          console.log('[Background] User authenticated, skipping download and uploading directly...');
+          
+          const backendUrl = await getBackendUrl();
+          
+          // Request offscreen to upload directly without downloading
+          await browser.runtime.sendMessage({
+            type: 'upload-recording',
+            filename: message.filename,
+            blobUrl: message.blobUrl, // Pass blob URL for direct upload
+            authToken: authState.authToken,
+            refreshToken: authState.refreshToken,
+            backendUrl,
+          });
+          
+          console.log('[Background] Upload request sent to offscreen');
+        } else {
+          // User is not logged in - download for local storage
+          console.log('[Background] User not authenticated, downloading locally...');
+          
+          const downloadId = await chrome.downloads.download({
+            url: message.blobUrl,
+            filename: message.filename,
+            saveAs: true,
+          });
 
-        console.log('[Background] Download initiated with ID:', downloadId);
+          console.log('[Background] Download initiated with ID:', downloadId);
 
-        // Monitor download completion
-        await waitForDownloadComplete(downloadId);
+          // Monitor download completion
+          await waitForDownloadComplete(downloadId);
 
-        console.log('[Background] Download verified complete');
-
-        // Check if user is authenticated and initiate upload
-        try {
-          const authState = await getAuthState();
-          if (authState.isAuthenticated && authState.authToken && authState.refreshToken) {
-            console.log('[Background] User authenticated, requesting upload...');
-
-            const backendUrl = await getBackendUrl();
-
-            // Request offscreen to upload before cleaning up
-            await browser.runtime.sendMessage({
-              type: 'upload-recording',
-              filename: message.filename,
-              authToken: authState.authToken,
-              refreshToken: authState.refreshToken,
-              backendUrl,
-            });
-
-            console.log('[Background] Upload request sent to offscreen');
-          } else {
-            console.log('[Background] User not authenticated, skipping upload');
-
-            // If not authenticated, proceed with cleanup immediately
-            await browser.runtime.sendMessage({
-              type: 'download-complete',
-            });
-          }
-        } catch (uploadError) {
-          console.error('[Background] Failed to initiate upload:', uploadError);
-
-          // Continue with cleanup even if upload fails
+          console.log('[Background] Download verified complete');
+          
+          // Proceed with cleanup
           await browser.runtime.sendMessage({
             type: 'download-complete',
           });

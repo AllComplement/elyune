@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import Recording, RecordingFile
 from .serializers import (
     RecordingSerializer,
@@ -18,6 +18,21 @@ class RecordingViewSet(viewsets.ModelViewSet):
     """ViewSet for Recording model"""
     permission_classes = [IsAuthenticated]
 
+    def get_permissions(self):
+        """
+        Allow anonymous access for:
+        - request_upload: Create recording and get upload URL
+        - upload_complete: Trigger processing after upload
+        
+        Require authentication for:
+        - list: View user's recordings
+        - retrieve: View specific recording details
+        - update/delete: Modify recordings
+        """
+        if self.action in ['request_upload', 'upload_complete']:
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
     def get_serializer_class(self):
         if self.action == 'list':
             return RecordingListSerializer
@@ -25,7 +40,8 @@ class RecordingViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Users can only see their own recordings
+        Users can only see their own recordings.
+        Anonymous users cannot list recordings.
         
         Query optimization:
         - select_related('analysis'): JOIN RecordingAnalysis (1-to-1) in single query
@@ -33,6 +49,9 @@ class RecordingViewSet(viewsets.ModelViewSet):
         
         This reduces queries from ~7+ to ~3 per recording detail request.
         """
+        if not self.request.user.is_authenticated:
+            return Recording.objects.none()
+            
         return Recording.objects.select_related(
             'analysis'
         ).prefetch_related(
@@ -72,8 +91,9 @@ class RecordingViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data
 
         # Create recording record
+        # Allow null user for anonymous recordings
         recording = Recording.objects.create(
-            user=request.user,
+            user=request.user if request.user.is_authenticated else None,
             original_filename=data['filename'],
             file_size_bytes=data['file_size'],
             quality=data['quality'],
@@ -155,7 +175,7 @@ class RecordingViewSet(viewsets.ModelViewSet):
         # Create RecordingFile entry
         RecordingFile.objects.create(
             recording=recording,
-            user=request.user,
+            user=request.user if request.user.is_authenticated else None,
             file_type='original_webm',
             s3_key=serializer.validated_data['s3_key'],
             s3_bucket=settings.AWS_STORAGE_BUCKET_NAME,
