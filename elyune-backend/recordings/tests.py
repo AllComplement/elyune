@@ -239,3 +239,150 @@ class RecordingAPIQueryOptimizationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         # Analysis should be null
         self.assertIsNone(response.data['analysis'])
+
+
+class RecordingListSerializerTests(TestCase):
+    """Test RecordingListSerializer field mappings"""
+    
+    def setUp(self):
+        """Create test user and recording"""
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        
+        self.client = APIClient()
+        refresh = RefreshToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+    
+    def test_duration_field_mapping(self):
+        """Test that duration_seconds is mapped to duration in list response"""
+        recording = Recording.objects.create(
+            user=self.user,
+            title='Test Recording',
+            original_filename='test.webm',
+            file_size_bytes=10000000,
+            quality='1080p',
+            fps=30,
+            duration_seconds=125.5,
+            has_system_audio=True,
+            has_microphone=False,
+            status='completed',
+            processing_progress=100
+        )
+        
+        response = self.client.get('/api/v1/recordings/')
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['results']), 1)
+        
+        item = response.data['results'][0]
+        
+        # Check that 'duration' field exists and matches duration_seconds
+        self.assertIn('duration', item)
+        self.assertEqual(item['duration'], 125.5)
+        
+        # Check that 'duration_seconds' is not in the response
+        self.assertNotIn('duration_seconds', item)
+    
+    def test_has_audio_field(self):
+        """Test that has_audio is computed correctly"""
+        # Recording with microphone only
+        rec1 = Recording.objects.create(
+            user=self.user,
+            title='Mic Only',
+            original_filename='test1.webm',
+            file_size_bytes=1000000,
+            quality='1080p',
+            has_system_audio=False,
+            has_microphone=True,
+            status='completed'
+        )
+        
+        # Recording with system audio only
+        rec2 = Recording.objects.create(
+            user=self.user,
+            title='System Audio Only',
+            original_filename='test2.webm',
+            file_size_bytes=1000000,
+            quality='1080p',
+            has_system_audio=True,
+            has_microphone=False,
+            status='completed'
+        )
+        
+        # Recording with no audio
+        rec3 = Recording.objects.create(
+            user=self.user,
+            title='No Audio',
+            original_filename='test3.webm',
+            file_size_bytes=1000000,
+            quality='1080p',
+            has_system_audio=False,
+            has_microphone=False,
+            status='completed'
+        )
+        
+        response = self.client.get('/api/v1/recordings/')
+        
+        self.assertEqual(response.status_code, 200)
+        results = {item['title']: item for item in response.data['results']}
+        
+        self.assertTrue(results['Mic Only']['has_audio'])
+        self.assertTrue(results['System Audio Only']['has_audio'])
+        self.assertFalse(results['No Audio']['has_audio'])
+    
+    def test_analysis_preview_field(self):
+        """Test that analysis preview is included with correct data"""
+        recording = Recording.objects.create(
+            user=self.user,
+            title='With Analysis',
+            original_filename='test.webm',
+            file_size_bytes=1000000,
+            quality='1080p',
+            status='completed',
+            processing_progress=100
+        )
+        
+        # Create analysis
+        RecordingAnalysis.objects.create(
+            recording=recording,
+            transcription_text='Test transcription',
+            transcription_num_speakers=2,
+            summary_text='Test summary',
+            action_items_text='Test action items',
+            key_points_text='Test key points'
+        )
+        
+        response = self.client.get('/api/v1/recordings/')
+        
+        self.assertEqual(response.status_code, 200)
+        item = response.data['results'][0]
+        
+        self.assertIn('analysis', item)
+        self.assertIsNotNone(item['analysis'])
+        self.assertEqual(item['analysis']['transcription_num_speakers'], 2)
+        self.assertTrue(item['analysis']['has_summary'])
+        self.assertTrue(item['analysis']['has_action_items'])
+        self.assertTrue(item['analysis']['has_key_points'])
+    
+    def test_analysis_null_when_not_present(self):
+        """Test that analysis is null when not yet processed"""
+        recording = Recording.objects.create(
+            user=self.user,
+            title='No Analysis',
+            original_filename='test.webm',
+            file_size_bytes=1000000,
+            quality='1080p',
+            status='processing',
+            processing_progress=50
+        )
+        
+        response = self.client.get('/api/v1/recordings/')
+        
+        self.assertEqual(response.status_code, 200)
+        item = response.data['results'][0]
+        
+        self.assertIn('analysis', item)
+        self.assertIsNone(item['analysis'])

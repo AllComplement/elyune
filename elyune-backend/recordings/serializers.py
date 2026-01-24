@@ -84,13 +84,37 @@ class RecordingSerializer(serializers.ModelSerializer):
 
 class RecordingListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for listing recordings"""
+    duration = serializers.FloatField(source='duration_seconds', read_only=True)
+    has_audio = serializers.SerializerMethodField()
+    analysis = serializers.SerializerMethodField()
+    
     class Meta:
         model = Recording
         fields = [
-            'id', 'title', 'quality', 'duration_seconds', 'status',
-            'processing_progress', 'original_filename', 'file_size_bytes', 'created_at'
+            'id', 'title', 'quality', 'duration', 'status',
+            'processing_progress', 'original_filename', 'file_size_bytes', 
+            'has_audio', 'error_message', 'created_at', 'analysis'
         ]
         read_only_fields = fields
+    
+    def get_has_audio(self, obj):
+        """Return True if recording has any audio (system or microphone)"""
+        return obj.has_system_audio or obj.has_microphone
+    
+    def get_analysis(self, obj):
+        """Return minimal analysis preview for list view"""
+        try:
+            analysis = obj.analysis
+            if analysis:
+                return {
+                    'transcription_num_speakers': analysis.transcription_num_speakers,
+                    'has_summary': bool(analysis.summary_text),
+                    'has_action_items': bool(analysis.action_items_text),
+                    'has_key_points': bool(analysis.key_points_text),
+                }
+        except Exception:
+            pass
+        return None
 
 
 class RecordingUploadRequestSerializer(serializers.Serializer):
