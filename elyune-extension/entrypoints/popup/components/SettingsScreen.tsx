@@ -78,66 +78,70 @@ export function SettingsScreen() {
     <div className="settings-container">
       <div className="settings-header">
         <h1>Settings</h1>
-        {user && <p className="user-info">Logged in as: <strong>{user.username}</strong></p>}
+        {user && <span className="user-badge">{user.username}</span>}
       </div>
 
-      <div className="settings-section">
-        <label htmlFor="backend-url">Backend URL</label>
-        <input
-          id="backend-url"
-          type="text"
-          value={backendUrl}
-          onChange={(e) => setBackendUrlState(e.target.value)}
-          placeholder="http://localhost:8000"
-          className="settings-input"
-        />
+      <div className="settings-content">
+        <div className="settings-section">
+          <label htmlFor="backend-url">Backend URL</label>
+          <input
+            id="backend-url"
+            type="text"
+            value={backendUrl}
+            onChange={(e) => setBackendUrlState(e.target.value)}
+            placeholder="http://localhost:8000"
+            className="settings-input"
+          />
 
-        <div className="button-group">
-          <button
-            onClick={testConnection}
-            disabled={testingConnection}
-            className="btn-secondary"
-          >
-            {testingConnection ? 'Testing...' : 'Test Connection'}
-          </button>
+          <div className="settings-actions-inline">
+            <button
+              onClick={testConnection}
+              disabled={testingConnection}
+              className="btn-secondary"
+            >
+              {testingConnection ? 'Testing...' : 'Test Connection'}
+            </button>
 
-          {connectionStatus === 'success' && (
-            <span className="status-success">✓ Connected</span>
-          )}
-          {connectionStatus === 'error' && (
-            <span className="status-error">✗ Connection failed</span>
+            {connectionStatus === 'success' && (
+              <span className="status-text success">Connected</span>
+            )}
+            {connectionStatus === 'error' && (
+              <span className="status-text error">Failed</span>
+            )}
+          </div>
+
+          {saveMessage && (
+            <p className={`save-message ${saveMessage.includes('success') ? 'success' : 'error'}`}>
+              {saveMessage}
+            </p>
           )}
         </div>
 
-        {saveMessage && (
-          <p className={`save-message ${saveMessage.includes('success') ? 'success' : 'error'}`}>
-            {saveMessage}
-          </p>
-        )}
-      </div>
+        <div className="settings-actions">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="btn-primary"
+          >
+            {saving ? 'Saving...' : 'Save Settings'}
+          </button>
 
-      <div className="settings-actions">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="btn-primary"
-        >
-          {saving ? 'Saving...' : 'Save Settings'}
-        </button>
+          <button
+            onClick={handleBack}
+            className="btn-secondary"
+          >
+            Back to Recording
+          </button>
 
-        <button
-          onClick={handleBack}
-          className="btn-secondary"
-        >
-          Back to Recording
-        </button>
-
-        <button
-          onClick={handleLogout}
-          className="btn-danger"
-        >
-          Logout
-        </button>
+          {user && (
+            <button
+              onClick={handleLogout}
+              className="btn-danger"
+            >
+              Logout
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

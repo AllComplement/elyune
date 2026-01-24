@@ -90,6 +90,9 @@ export function RecordingsListScreen() {
         <div className="recordings-header-row">
           <h1>Recordings</h1>
           <div className="header-controls">
+            <button onClick={loadRecordings} className="refresh-icon-btn" title="Refresh">
+              ⟳
+            </button>
             {user && (
               <span className="recording-user-info">
                 {user.username}
@@ -210,12 +213,6 @@ export function RecordingsListScreen() {
           </div>
         </div>
       )}
-
-      <div className="recordings-footer">
-        <button onClick={loadRecordings} className="btn-secondary">
-          Refresh
-        </button>
-      </div>
     </div>
   );
 }
