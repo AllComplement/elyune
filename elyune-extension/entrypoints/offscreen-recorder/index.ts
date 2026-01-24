@@ -28,6 +28,7 @@ console.log('[Offscreen] Chunks store created');
 interface RecordingState {
   mediaRecorder: MediaRecorder | null;
   stream: MediaStream | null;
+  displayStream: MediaStream | null;  // Original screen capture stream
   chunks: Blob[];
   chunkIndex: number;
   isPaused: boolean;
@@ -48,6 +49,7 @@ interface RecordingState {
 const state: RecordingState = {
   mediaRecorder: null,
   stream: null,
+  displayStream: null,
   chunks: [],
   chunkIndex: 0,
   isPaused: false,
@@ -200,6 +202,9 @@ async function startRecording(originalTabId: number, options: any) {
       },
       audio: true,  // Capture system audio
     } as MediaStreamConstraints);
+
+    // Store displayStream in state so we can stop it later
+    state.displayStream = displayStream;
 
     console.log('[Offscreen] Got display stream');
     console.log('[Offscreen] Video tracks:', displayStream.getVideoTracks().length);
@@ -440,7 +445,15 @@ async function startRecording(originalTabId: number, options: any) {
   } catch (error) {
     console.error('[Offscreen] Failed to start recording:', error);
 
-    // Cleanup on error
+    // Cleanup on error - stop all streams
+    if (state.displayStream) {
+      state.displayStream.getTracks().forEach(track => track.stop());
+      state.displayStream = null;
+    }
+    if (state.stream) {
+      state.stream.getTracks().forEach(track => track.stop());
+      state.stream = null;
+    }
     cleanupAudioResources();
 
     // Check if user denied permission
@@ -471,11 +484,22 @@ async function stopRecording() {
     console.log('[Offscreen] MediaRecorder already inactive or null');
   }
 
-  // Stop all tracks
-  if (state.stream) {
-    console.log('[Offscreen] Stopping stream tracks...');
+  // Stop display stream (screen capture) - this removes the red recording indicator
+  if (state.displayStream) {
+    console.log('[Offscreen] Stopping display stream tracks...');
+    state.displayStream.getTracks().forEach((track) => {
+      console.log(`[Offscreen] Stopping track: ${track.kind} (${track.label})`);
+      track.stop();
+    });
+    state.displayStream = null;
+  }
+
+  // Stop final mixed stream (if different from display stream)
+  if (state.stream && state.stream !== state.displayStream) {
+    console.log('[Offscreen] Stopping final stream tracks...');
     state.stream.getTracks().forEach((track) => track.stop());
   }
+  state.stream = null;
 
   // Cleanup audio resources
   cleanupAudioResources();
