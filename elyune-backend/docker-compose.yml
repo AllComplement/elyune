@@ -22,7 +22,7 @@ services:
     image: adminer
     container_name: elyune_adminer
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     networks:
       - elyune_network
     depends_on:
@@ -154,7 +154,7 @@ services:
     container_name: elyune_flower
     command: celery -A config flower --port=5555
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
