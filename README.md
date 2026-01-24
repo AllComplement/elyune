@@ -2,9 +2,65 @@
 
 Screen recording and analysis platform with AI-powered transcription, automatic summarization, and intelligent insights.
 
+[![CI Status](https://github.com/AllComplement/elyune/actions/workflows/ci.yml/badge.svg)](https://github.com/AllComplement/elyune/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/AllComplement/elyune)](https://github.com/AllComplement/elyune/releases)
+
 ## Overview
 
 Elyune combines a browser extension for screen recording with a backend processing pipeline that automatically transcribes audio, generates summaries, extracts action items, and provides sentiment analysis using advanced AI models.
+
+## 🚀 Try the Extension
+
+### Quick Install (No Setup Required)
+
+**Want to try Elyune without setting up the backend?** Download and install the extension to test screen recording:
+
+1. **Download the latest release:**
+   - Go to [Releases](https://github.com/AllComplement/elyune/releases/latest)
+   - Download `elyune-chrome-v1.0.0.zip` (for Chrome/Edge/Brave)
+   - Download `elyune-firefox-v1.0.0.zip` (for Firefox)
+
+2. **Install in Chrome/Edge/Brave:**
+   - Extract the zip file to a folder on your computer
+   - Open `chrome://extensions` (or `edge://extensions`)
+   - Enable **"Developer mode"** (toggle in top-right corner)
+   - Click **"Load unpacked"**
+   - Select the extracted folder
+   - The Elyune icon will appear in your browser toolbar
+
+3. **Install in Firefox:**
+   - Open `about:debugging#/runtime/this-firefox`
+   - Click **"Load Temporary Add-on"**
+   - Select the downloaded `.zip` file (no need to extract)
+   - The Elyune icon will appear in your browser toolbar
+
+4. **Start Recording:**
+   - Click the Elyune icon in your toolbar
+   - Click **"Start Recording"**
+   - Select a screen, window, or tab to record
+   - Click **"Stop Recording"** when done
+   - Your recording will be saved as a `.webm` file
+
+**Note:** For full functionality including AI transcription and analysis, you'll need to set up the backend (see Full Setup below).
+
+### What You Can Do
+
+**With Extension Only:**
+- ✅ Record your screen, windows, or tabs
+- ✅ Adjust quality settings (480p - 4K)
+- ✅ Use keyboard shortcuts (`Alt+Shift+R` to start/stop)
+- ✅ Save recordings locally as `.webm` files
+- ✅ Monitor storage usage
+
+**With Full Setup (Extension + Backend):**
+- ✅ All of the above, plus:
+- ✅ Automatic upload to secure cloud storage
+- ✅ AI-powered transcription with speaker detection
+- ✅ Automatic summary generation
+- ✅ Action items extraction with timestamps
+- ✅ Key points identification
+- ✅ Sentiment analysis
+- ✅ Access recordings from any device
 
 ## Architecture
 
@@ -39,6 +95,10 @@ Django REST Framework backend with automated processing pipeline for recordings.
 [→ Backend Documentation](./elyune-backend/README.md)
 
 ## Quick Start
+
+### Full Setup (Extension + Backend)
+
+Want the complete experience with AI analysis? Follow these steps:
 
 ### Prerequisites
 - Node.js 18+ (for extension development)
