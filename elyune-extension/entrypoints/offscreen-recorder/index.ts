@@ -88,7 +88,7 @@ browser.runtime.onMessage.addListener(async (message) => {
     console.log('[Offscreen] Upload request received');
 
     try {
-      await handleUpload(
+      const uploadResult = await handleUpload(
         message.filename,
         message.authToken,
         message.refreshToken,
@@ -101,6 +101,7 @@ browser.runtime.onMessage.addListener(async (message) => {
       await browser.runtime.sendMessage({
         type: 'upload-complete',
         filename: message.filename,
+        recordingId: uploadResult.recordingId,
       });
     } catch (error) {
       console.error('[Offscreen] Upload failed:', error);
@@ -844,6 +845,10 @@ async function handleUpload(
   }
 
   console.log('[Offscreen] Backend notified, upload process complete');
+  
+  return {
+    recordingId: uploadData.recording_id,
+  };
 }
 
 // Quality and codec utilities

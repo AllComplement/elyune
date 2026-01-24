@@ -389,10 +389,304 @@ def transcribe_audio(self, recording_id):
         raise self.retry(exc=exc, countdown=180)
 
 
+# Parallel AI Analysis Sub-Tasks (for concurrent execution)
+
 @shared_task(bind=True, max_retries=3)
+def generate_and_save_summary(self, recording_id, formatted_transcript, model_name):
+    """Generate summary analysis (parallel sub-task)"""
+    import random
+    from time import sleep
+    
+    try:
+        recording = Recording.objects.get(id=recording_id)
+        
+        # Initialize Gemini (each task needs its own instance)
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(model_name)
+        
+        logger.info(f"[Summary] Starting for {recording_id}")
+        
+        # Generate analysis
+        summary_result = generate_summary(model, formatted_transcript)
+        
+        # Save to database (idempotent)
+        AIAnalysis.objects.update_or_create(
+            recording=recording,
+            analysis_type='summary',
+            defaults={
+                'result_data': summary_result['data'],
+                'result_text': summary_result['text'],
+                'model_version': model_name,
+                'tokens_used': summary_result.get('tokens', 0),
+                'processing_time_seconds': summary_result['time'],
+                'gemini_response': summary_result.get('response', {})
+            }
+        )
+        
+        logger.info(f"[Summary] Completed for {recording_id} in {summary_result['time']:.2f}s")
+        return {'type': 'summary', 'status': 'success', 'time': summary_result['time']}
+        
+    except Exception as exc:
+        logger.error(f"[Summary] Failed for {recording_id}: {exc}")
+        
+        # Check for rate limiting
+        error_str = str(exc).lower()
+        if '429' in error_str or 'rate limit' in error_str or 'quota' in error_str:
+            # Exponential backoff for rate limits
+            wait_time = min((2 ** self.request.retries) + random.uniform(0, 1), 60)
+            logger.warning(f"[Summary] Rate limited, waiting {wait_time:.2f}s before retry...")
+            sleep(wait_time)
+            raise self.retry(exc=exc, countdown=int(wait_time))
+        
+        # Store partial failure
+        try:
+            recording = Recording.objects.get(id=recording_id)
+            AIAnalysis.objects.update_or_create(
+                recording=recording,
+                analysis_type='summary',
+                defaults={'result_text': f'Failed: {str(exc)[:500]}'}
+            )
+        except Exception:
+            pass
+        
+        return {'type': 'summary', 'status': 'failed', 'error': str(exc)[:200]}
+
+
+@shared_task(bind=True, max_retries=3)
+def generate_and_save_action_items(self, recording_id, formatted_transcript, model_name):
+    """Extract action items analysis (parallel sub-task)"""
+    import random
+    from time import sleep
+    
+    try:
+        recording = Recording.objects.get(id=recording_id)
+        
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(model_name)
+        
+        logger.info(f"[ActionItems] Starting for {recording_id}")
+        
+        action_items_result = extract_action_items(model, formatted_transcript)
+        
+        AIAnalysis.objects.update_or_create(
+            recording=recording,
+            analysis_type='action_items',
+            defaults={
+                'result_data': action_items_result['data'],
+                'result_text': action_items_result['text'],
+                'model_version': model_name,
+                'tokens_used': action_items_result.get('tokens', 0),
+                'processing_time_seconds': action_items_result['time'],
+                'gemini_response': action_items_result.get('response', {})
+            }
+        )
+        
+        logger.info(f"[ActionItems] Completed for {recording_id} in {action_items_result['time']:.2f}s")
+        return {'type': 'action_items', 'status': 'success', 'time': action_items_result['time']}
+        
+    except Exception as exc:
+        logger.error(f"[ActionItems] Failed for {recording_id}: {exc}")
+        
+        error_str = str(exc).lower()
+        if '429' in error_str or 'rate limit' in error_str or 'quota' in error_str:
+            wait_time = min((2 ** self.request.retries) + random.uniform(0, 1), 60)
+            logger.warning(f"[ActionItems] Rate limited, waiting {wait_time:.2f}s before retry...")
+            sleep(wait_time)
+            raise self.retry(exc=exc, countdown=int(wait_time))
+        
+        try:
+            recording = Recording.objects.get(id=recording_id)
+            AIAnalysis.objects.update_or_create(
+                recording=recording,
+                analysis_type='action_items',
+                defaults={'result_text': f'Failed: {str(exc)[:500]}'}
+            )
+        except Exception:
+            pass
+        
+        return {'type': 'action_items', 'status': 'failed', 'error': str(exc)[:200]}
+
+
+@shared_task(bind=True, max_retries=3)
+def generate_and_save_key_points(self, recording_id, formatted_transcript, model_name):
+    """Extract key points analysis (parallel sub-task)"""
+    import random
+    from time import sleep
+    
+    try:
+        recording = Recording.objects.get(id=recording_id)
+        
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(model_name)
+        
+        logger.info(f"[KeyPoints] Starting for {recording_id}")
+        
+        key_points_result = extract_key_points(model, formatted_transcript)
+        
+        AIAnalysis.objects.update_or_create(
+            recording=recording,
+            analysis_type='key_points',
+            defaults={
+                'result_data': key_points_result['data'],
+                'result_text': key_points_result['text'],
+                'model_version': model_name,
+                'tokens_used': key_points_result.get('tokens', 0),
+                'processing_time_seconds': key_points_result['time'],
+                'gemini_response': key_points_result.get('response', {})
+            }
+        )
+        
+        logger.info(f"[KeyPoints] Completed for {recording_id} in {key_points_result['time']:.2f}s")
+        return {'type': 'key_points', 'status': 'success', 'time': key_points_result['time']}
+        
+    except Exception as exc:
+        logger.error(f"[KeyPoints] Failed for {recording_id}: {exc}")
+        
+        error_str = str(exc).lower()
+        if '429' in error_str or 'rate limit' in error_str or 'quota' in error_str:
+            wait_time = min((2 ** self.request.retries) + random.uniform(0, 1), 60)
+            logger.warning(f"[KeyPoints] Rate limited, waiting {wait_time:.2f}s before retry...")
+            sleep(wait_time)
+            raise self.retry(exc=exc, countdown=int(wait_time))
+        
+        try:
+            recording = Recording.objects.get(id=recording_id)
+            AIAnalysis.objects.update_or_create(
+                recording=recording,
+                analysis_type='key_points',
+                defaults={'result_text': f'Failed: {str(exc)[:500]}'}
+            )
+        except Exception:
+            pass
+        
+        return {'type': 'key_points', 'status': 'failed', 'error': str(exc)[:200]}
+
+
+@shared_task(bind=True, max_retries=3)
+def generate_and_save_sentiment(self, recording_id, formatted_transcript, model_name):
+    """Analyze sentiment (parallel sub-task)"""
+    import random
+    from time import sleep
+    
+    try:
+        recording = Recording.objects.get(id=recording_id)
+        
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(model_name)
+        
+        logger.info(f"[Sentiment] Starting for {recording_id}")
+        
+        sentiment_result = analyze_sentiment(model, formatted_transcript)
+        
+        AIAnalysis.objects.update_or_create(
+            recording=recording,
+            analysis_type='sentiment',
+            defaults={
+                'result_data': sentiment_result['data'],
+                'result_text': sentiment_result['text'],
+                'model_version': model_name,
+                'tokens_used': sentiment_result.get('tokens', 0),
+                'processing_time_seconds': sentiment_result['time'],
+                'gemini_response': sentiment_result.get('response', {})
+            }
+        )
+        
+        logger.info(f"[Sentiment] Completed for {recording_id} in {sentiment_result['time']:.2f}s")
+        return {'type': 'sentiment', 'status': 'success', 'time': sentiment_result['time']}
+        
+    except Exception as exc:
+        logger.error(f"[Sentiment] Failed for {recording_id}: {exc}")
+        
+        error_str = str(exc).lower()
+        if '429' in error_str or 'rate limit' in error_str or 'quota' in error_str:
+            wait_time = min((2 ** self.request.retries) + random.uniform(0, 1), 60)
+            logger.warning(f"[Sentiment] Rate limited, waiting {wait_time:.2f}s before retry...")
+            sleep(wait_time)
+            raise self.retry(exc=exc, countdown=int(wait_time))
+        
+        try:
+            recording = Recording.objects.get(id=recording_id)
+            AIAnalysis.objects.update_or_create(
+                recording=recording,
+                analysis_type='sentiment',
+                defaults={'result_text': f'Failed: {str(exc)[:500]}'}
+            )
+        except Exception:
+            pass
+        
+        return {'type': 'sentiment', 'status': 'failed', 'error': str(exc)[:200]}
+
+
+@shared_task(bind=True, max_retries=1)
+def finalize_parallel_analysis(self, results, recording_id):
+    """
+    Callback task to finalize parallel analysis results
+    This is called after all 4 parallel tasks complete
+    """
+    try:
+        recording = Recording.objects.get(id=recording_id)
+        job = recording.processing_job
+        step = ProcessingStep.objects.get(job=job, step_name='ai_analysis')
+        
+        # Analyze results
+        failed_analyses = [r for r in results if r['status'] == 'failed']
+        successful_analyses = [r for r in results if r['status'] == 'success']
+        
+        # Calculate total time (max of all parallel tasks)
+        total_time = max([r.get('time', 0) for r in successful_analyses], default=0)
+        
+        logger.info(f"Parallel analysis complete: {len(successful_analyses)}/4 succeeded in {total_time:.2f}s")
+        
+        # Update step based on results
+        if len(failed_analyses) == 4:
+            # All failed - mark as failed
+            step.status = 'failed'
+            step.error_message = 'All AI analyses failed: ' + '; '.join([f"{f['type']}: {f.get('error', 'unknown')}" for f in failed_analyses])
+            recording.status = 'failed'
+            recording.error_message = step.error_message
+            logger.error(f"All analyses failed for {recording_id}")
+        elif failed_analyses:
+            # Partial failure - mark as completed with warning
+            failed_types = [f['type'] for f in failed_analyses]
+            step.status = 'completed'
+            step.error_message = f'{len(failed_analyses)}/4 analyses failed: {", ".join(failed_types)}'
+            recording.status = 'completed'
+            recording.completed_at = timezone.now()
+            logger.warning(f"Partial success for {recording_id}: {failed_types} failed")
+        else:
+            # All succeeded
+            step.status = 'completed'
+            recording.status = 'completed'
+            recording.completed_at = timezone.now()
+            logger.info(f"All analyses succeeded for {recording_id}")
+        
+        step.completed_at = timezone.now()
+        step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
+        step.save()
+        recording.save()
+
+        # Mark job as completed (even with partial failures)
+        if recording.status == 'completed':
+            job.status = 'completed'
+            job.completed_at = timezone.now()
+            job.progress_percentage = 100
+            job.save()
+
+        return recording_id
+        
+    except Exception as exc:
+        logger.error(f"Failed to finalize parallel analysis for {recording_id}: {exc}")
+        raise
+
+
+@shared_task(bind=True, max_retries=2)
 def analyze_transcription(self, recording_id):
     """
-    Send transcription to Gemini for AI analysis
+    Orchestrate parallel AI analysis using Celery groups with callback
     Generates: summary, action items, key points, sentiment analysis
     """
     step = None
@@ -412,112 +706,45 @@ def analyze_transcription(self, recording_id):
             }
         )
 
-        logger.info(f"Starting AI analysis for {recording_id}")
+        logger.info(f"Starting parallel AI analysis for {recording_id}")
 
         # Check if Gemini API key is configured
         if not settings.GEMINI_API_KEY:
             raise Exception("GEMINI_API_KEY not configured")
 
         import google.generativeai as genai
+        from celery import chord
 
-        # Configure Gemini
+        # Configure Gemini and determine model
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        # Fallback to gemini-2.0-flash if 2.5 is unavailable
         model_name = 'gemini-2.5-flash'
         try:
-            model = genai.GenerativeModel(model_name)
-            # Simple test generation to verify model availability
-            model.generate_content("test")
+            test_model = genai.GenerativeModel(model_name)
+            test_model.generate_content("test")
         except Exception as e:
             logger.warning(f"Failed to use {model_name}, falling back to gemini-2.0-flash: {e}")
             model_name = 'gemini-2.0-flash'
-            model = genai.GenerativeModel(model_name)
 
         # Prepare transcript with speaker info
         formatted_transcript = format_transcript_with_speakers(transcription)
 
-        # 1. Generate Summary
-        summary_result = generate_summary(model, formatted_transcript)
-        AIAnalysis.objects.update_or_create(
-            recording=recording,
-            analysis_type='summary',
-            defaults={
-                'result_data': summary_result['data'],
-                'result_text': summary_result['text'],
-                'model_version': model_name,
-                'tokens_used': summary_result.get('tokens', 0),
-                'processing_time_seconds': summary_result['time'],
-                'gemini_response': summary_result.get('response', {})
-            }
-        )
-
-        # 2. Extract Action Items
-        action_items_result = extract_action_items(model, formatted_transcript)
-        AIAnalysis.objects.update_or_create(
-            recording=recording,
-            analysis_type='action_items',
-            defaults={
-                'result_data': action_items_result['data'],
-                'result_text': action_items_result['text'],
-                'model_version': model_name,
-                'tokens_used': action_items_result.get('tokens', 0),
-                'processing_time_seconds': action_items_result['time'],
-                'gemini_response': action_items_result.get('response', {})
-            }
-        )
-
-        # 3. Extract Key Points
-        key_points_result = extract_key_points(model, formatted_transcript)
-        AIAnalysis.objects.update_or_create(
-            recording=recording,
-            analysis_type='key_points',
-            defaults={
-                'result_data': key_points_result['data'],
-                'result_text': key_points_result['text'],
-                'model_version': model_name,
-                'tokens_used': key_points_result.get('tokens', 0),
-                'processing_time_seconds': key_points_result['time'],
-                'gemini_response': key_points_result.get('response', {})
-            }
-        )
-
-        # 4. Sentiment Analysis
-        sentiment_result = analyze_sentiment(model, formatted_transcript)
-        AIAnalysis.objects.update_or_create(
-            recording=recording,
-            analysis_type='sentiment',
-            defaults={
-                'result_data': sentiment_result['data'],
-                'result_text': sentiment_result['text'],
-                'model_version': model_name,
-                'tokens_used': sentiment_result.get('tokens', 0),
-                'processing_time_seconds': sentiment_result['time'],
-                'gemini_response': sentiment_result.get('response', {})
-            }
-        )
-
-        # Update step
-        step.status = 'completed'
-        step.completed_at = timezone.now()
-        step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
-        step.save()
-
-        # Mark recording as completed
-        recording.status = 'completed'
-        recording.completed_at = timezone.now()
-        recording.save()
-
-        # Mark job as completed
-        job.status = 'completed'
-        job.completed_at = timezone.now()
-        job.progress_percentage = 100
-        job.save()
-
-        logger.info(f"AI analysis completed for {recording_id}")
+        # Launch all 4 analyses in parallel using Celery chord (group + callback)
+        logger.info(f"Launching 4 parallel analysis tasks for {recording_id}")
+        
+        # Use chord: run tasks in parallel, then call callback with results
+        callback = finalize_parallel_analysis.s(str(recording_id))
+        parallel_workflow = chord([
+            generate_and_save_summary.s(str(recording_id), formatted_transcript, model_name),
+            generate_and_save_action_items.s(str(recording_id), formatted_transcript, model_name),
+            generate_and_save_key_points.s(str(recording_id), formatted_transcript, model_name),
+            generate_and_save_sentiment.s(str(recording_id), formatted_transcript, model_name),
+        ])(callback)
+        
+        logger.info(f"Parallel tasks launched for {recording_id}, callback will finalize")
         return recording_id
 
     except Exception as exc:
-        logger.error(f"AI analysis failed for {recording_id}: {exc}")
+        logger.error(f"AI analysis orchestration failed for {recording_id}: {exc}")
         if step:
             step.status = 'failed'
             step.error_message = str(exc)
@@ -529,7 +756,7 @@ def analyze_transcription(self, recording_id):
             recording.error_message = str(exc)
             recording.save()
 
-        raise self.retry(exc=exc, countdown=180)
+        raise self.retry(exc=exc, countdown=120)
 
 
 # Helper functions for AI analysis

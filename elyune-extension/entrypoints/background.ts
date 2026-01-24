@@ -50,8 +50,13 @@ export default defineBackground(() => {
         type: 'basic',
         iconUrl: browser.runtime.getURL('/icon/128.png'),
         title: 'Recording Uploaded',
-        message: `${message.filename} uploaded successfully`,
+        message: `${message.filename} uploaded successfully. Processing will take ~15-30 seconds.`,
       });
+
+      // Start monitoring for processing completion
+      if (message.recordingId) {
+        monitorRecordingProcessing(message.recordingId, message.filename);
+      }
 
       return;
     }
@@ -467,4 +472,108 @@ async function closeOffscreenDocument() {
   } catch (error) {
     console.warn('Error closing offscreen document:', error);
   }
+}
+
+/**
+ * Monitor a recording's processing status and notify when complete
+ * Polls the backend API every 10 seconds for up to 5 minutes
+ */
+async function monitorRecordingProcessing(recordingId: string, filename: string) {
+  console.log('[Background] Starting to monitor recording:', recordingId);
+  
+  const maxAttempts = 30; // 30 attempts * 10s = 5 minutes max
+  let attempts = 0;
+  
+  const checkStatus = async () => {
+    attempts++;
+    
+    try {
+      // Get auth state and backend URL
+      const authState = await getAuthState();
+      if (!authState.isAuthenticated || !authState.authToken) {
+        console.log('[Background] User logged out, stopping monitoring');
+        return;
+      }
+      
+      const backendUrl = await getBackendUrl();
+      
+      // Fetch recording status
+      const response = await fetch(`${backendUrl}/api/v1/recordings/${recordingId}/`, {
+        headers: {
+          'Authorization': `Bearer ${authState.authToken}`,
+        },
+      });
+      
+      if (!response.ok) {
+        console.error('[Background] Failed to fetch recording status:', response.status);
+        
+        // Stop monitoring after max attempts
+        if (attempts >= maxAttempts) {
+          console.log('[Background] Max monitoring attempts reached');
+          return;
+        }
+        
+        // Retry
+        setTimeout(checkStatus, 10000);
+        return;
+      }
+      
+      const recording = await response.json();
+      console.log(`[Background] Recording status (attempt ${attempts}):`, recording.status);
+      
+      // Check if processing is complete
+      if (recording.status === 'completed') {
+        console.log('[Background] ✅ Processing complete!');
+        
+        // Show success notification
+        await chrome.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icon/128.png'),
+          title: 'Recording Processed',
+          message: `${filename} has been transcribed and analyzed. View results in your dashboard.`,
+          priority: 2,
+        });
+        
+        return; // Stop monitoring
+      } else if (recording.status === 'failed') {
+        console.log('[Background] ❌ Processing failed');
+        
+        // Show failure notification
+        await chrome.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icon/128.png'),
+          title: 'Processing Failed',
+          message: `Failed to process ${filename}. ${recording.error_message || 'Please try again.'}`,
+          priority: 2,
+        });
+        
+        return; // Stop monitoring
+      } else if (recording.status === 'processing' || recording.status === 'uploaded') {
+        // Still processing, check again in 10 seconds
+        if (attempts < maxAttempts) {
+          setTimeout(checkStatus, 10000);
+        } else {
+          console.log('[Background] Max monitoring attempts reached, processing may still be ongoing');
+          
+          // Show timeout notification
+          await chrome.notifications.create({
+            type: 'basic',
+            iconUrl: browser.runtime.getURL('/icon/128.png'),
+            title: 'Processing Taking Longer',
+            message: `${filename} is still being processed. Check your dashboard for updates.`,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[Background] Error checking recording status:', error);
+      
+      // Retry if not max attempts
+      if (attempts < maxAttempts) {
+        setTimeout(checkStatus, 10000);
+      }
+    }
+  };
+  
+  // Start checking after initial delay (give upload time to settle)
+  setTimeout(checkStatus, 10000);
 }
