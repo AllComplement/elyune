@@ -37,6 +37,15 @@ export function RecordingsListScreen() {
     navigate('/');
   };
 
+  const handleRecordingClick = (recordingId: string) => {
+    // Open recording details in new tab
+    // Use chrome.runtime.getURL which accepts any path
+    const detailsUrl = chrome.runtime.getURL(`recording-details.html?id=${recordingId}`);
+    browser.tabs.create({
+      url: detailsUrl
+    });
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString(undefined, {
@@ -137,7 +146,11 @@ export function RecordingsListScreen() {
         <div className="recordings-content">
           <div className="recordings-list">
             {recordings.map((recording) => (
-              <div key={recording.id} className="recording-item">
+              <div 
+                key={recording.id} 
+                className="recording-item"
+                onClick={() => handleRecordingClick(recording.id)}
+              >
                 <div className="recording-item-header">
                   <div>
                     <span className="recording-date">
