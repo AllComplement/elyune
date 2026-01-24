@@ -21,7 +21,8 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Public routes */}
+      {/* Public routes - accessible to everyone */}
+      <Route path="/" element={<RecordingScreen />} />
       <Route path="/settings" element={<SettingsScreen />} />
       <Route
         path="/login"
@@ -36,13 +37,7 @@ function AppRoutes() {
         }
       />
 
-      {/* Protected routes */}
-      <Route
-        path="/"
-        element={
-          isAuthenticated ? <RecordingScreen /> : <Navigate to="/login" replace />
-        }
-      />
+      {/* Protected routes - require authentication */}
       <Route
         path="/history"
         element={

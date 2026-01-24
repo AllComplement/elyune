@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 
 export function RecordingScreen() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [micEnabled, setMicEnabled] = useState(false);
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
@@ -146,23 +146,52 @@ export function RecordingScreen() {
     navigate('/history');
   };
 
+  const handleLoginClick = () => {
+    navigate('/login');
+  };
+
+  const handleSignupClick = () => {
+    navigate('/signup');
+  };
+
   return (
     <div className="popup-container">
       <div className="recording-header">
         <h1>Screen Recorder</h1>
         <div className="header-controls">
-          {user && (
-            <span className="recording-user-info">
-              {user.username}
-            </span>
+          {isAuthenticated ? (
+            <>
+              {user && (
+                <span className="recording-user-info">
+                  {user.username}
+                </span>
+              )}
+              <button
+                onClick={handleHistoryClick}
+                className="history-icon-btn"
+                title="View recordings history"
+              >
+                📋
+              </button>
+            </>
+          ) : (
+            <div className="auth-buttons">
+              <button
+                onClick={handleLoginClick}
+                className="btn-auth btn-login"
+                title="Login to save recordings online"
+              >
+                Login
+              </button>
+              <button
+                onClick={handleSignupClick}
+                className="btn-auth btn-signup"
+                title="Create an account"
+              >
+                Sign Up
+              </button>
+            </div>
           )}
-          <button
-            onClick={handleHistoryClick}
-            className="history-icon-btn"
-            title="View recordings history"
-          >
-            📋
-          </button>
           <button
             onClick={handleSettingsClick}
             className="settings-icon-btn"
@@ -190,6 +219,16 @@ export function RecordingScreen() {
           Stop Recording
         </button>
       </div>
+
+      {!isAuthenticated && !isRecording && (
+        <div className="anonymous-notice">
+          <p className="notice-text">
+            📥 Recording without login will download to your computer.
+            <br />
+            <strong>Login to save recordings online</strong> for transcription and AI analysis.
+          </p>
+        </div>
+      )}
 
       <div className="mic-toggle-container">
         <label className="toggle-label">
