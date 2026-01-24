@@ -120,6 +120,30 @@ def convert_webm_to_mp4(self, recording_id):
         if result.returncode != 0:
             raise Exception(f"FFmpeg failed: {result.stderr}")
 
+        # Extract duration using ffprobe
+        ffprobe_command = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            mp4_path
+        ]
+        
+        probe_result = subprocess.run(
+            ffprobe_command,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        duration_seconds = None
+        if probe_result.returncode == 0 and probe_result.stdout.strip():
+            try:
+                duration_seconds = float(probe_result.stdout.strip())
+                logger.info(f"Extracted duration: {duration_seconds} seconds")
+            except ValueError:
+                logger.warning(f"Could not parse duration: {probe_result.stdout}")
+
         # Upload to MinIO
         s3_key = f"recordings/{recording_id}/converted.mp4"
         upload_to_s3(mp4_path, s3_key)
@@ -136,9 +160,13 @@ def convert_webm_to_mp4(self, recording_id):
             }
         )
 
-        # Update progress
+        # Update recording with duration
+        update_fields = ['processing_progress']
         recording.processing_progress = 25
-        recording.save(update_fields=['processing_progress'])
+        if duration_seconds is not None:
+            recording.duration_seconds = duration_seconds
+            update_fields.append('duration_seconds')
+        recording.save(update_fields=update_fields)
 
         # Cleanup
         os.remove(webm_path)
