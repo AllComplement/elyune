@@ -171,7 +171,7 @@ export function RecordingScreen() {
                 className="history-icon-btn"
                 title="View recordings history"
               >
-                📋
+                ≡
               </button>
             </>
           ) : (
@@ -197,7 +197,7 @@ export function RecordingScreen() {
             className="settings-icon-btn"
             title="Settings"
           >
-            ⚙️
+            ⚙
           </button>
         </div>
       </div>
@@ -223,9 +223,9 @@ export function RecordingScreen() {
       {!isAuthenticated && !isRecording && (
         <div className="anonymous-notice">
           <p className="notice-text">
-            📥 Recording without login will download to your computer.
+            <strong>Not logged in</strong>
             <br />
-            <strong>Login to save recordings online</strong> for transcription and AI analysis.
+            Recording will download to your computer. Login to save recordings online for transcription and AI analysis.
           </p>
         </div>
       )}
@@ -239,7 +239,7 @@ export function RecordingScreen() {
             className="toggle-checkbox"
           />
           <span className="toggle-text">
-            {micEnabled ? '🎤 Microphone On' : '🎤 Microphone Off'}
+            {micEnabled ? 'Microphone On' : 'Microphone Off'}
           </span>
         </label>
 

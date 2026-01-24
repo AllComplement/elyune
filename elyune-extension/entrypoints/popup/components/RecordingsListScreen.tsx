@@ -55,29 +55,31 @@ export function RecordingsListScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusClass = (status: string) => {
     switch (status) {
       case 'completed':
-        return '#28a745';
+        return 'status-completed';
       case 'processing':
-        return '#ffc107';
+        return 'status-processing';
       case 'failed':
-        return '#dc3545';
+        return 'status-failed';
+      case 'uploading':
+        return 'status-uploading';
       default:
-        return '#6c757d';
+        return 'status-completed';
     }
   };
 
   const getStatusText = (status: string, progress?: number) => {
     if (status === 'processing' && progress !== undefined) {
-      return `Processing (${progress}%)`;
+      return `Processing ${progress}%`;
     }
     return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   return (
-    <div className="popup-container">
-      <div className="recording-header">
+    <div className="recordings-container">
+      <div className="recordings-header">
         <button
           onClick={handleBackClick}
           className="back-button"
@@ -85,20 +87,22 @@ export function RecordingsListScreen() {
         >
           ← Back
         </button>
-        <h1>Recordings</h1>
-        <div className="header-controls">
-          {user && (
-            <span className="recording-user-info">
-              {user.username}
-            </span>
-          )}
-          <button
-            onClick={handleSettingsClick}
-            className="settings-icon-btn"
-            title="Settings"
-          >
-            ⚙️
-          </button>
+        <div className="recordings-header-row">
+          <h1>Recordings</h1>
+          <div className="header-controls">
+            {user && (
+              <span className="recording-user-info">
+                {user.username}
+              </span>
+            )}
+            <button
+              onClick={handleSettingsClick}
+              className="settings-icon-btn"
+              title="Settings"
+            >
+              ⚙
+            </button>
+          </div>
         </div>
       </div>
 
@@ -127,20 +131,22 @@ export function RecordingsListScreen() {
       )}
 
       {!loading && !error && recordings.length > 0 && (
-        <div className="recordings-list">
-          {recordings.map((recording) => (
-            <div key={recording.id} className="recording-item">
-              <div className="recording-item-header">
-                <span
-                  className="recording-status-badge"
-                  style={{ backgroundColor: getStatusColor(recording.status) }}
-                >
-                  {getStatusText(recording.status, recording.processing_progress)}
-                </span>
-                <span className="recording-date">
-                  {formatDate(recording.created_at)}
-                </span>
-              </div>
+        <div className="recordings-content">
+          <div className="recordings-list">
+            {recordings.map((recording) => (
+              <div key={recording.id} className="recording-item">
+                <div className="recording-item-header">
+                  <div>
+                    <span className="recording-date">
+                      {formatDate(recording.created_at)}
+                    </span>
+                    <span
+                      className={`recording-status-badge ${getStatusClass(recording.status)}`}
+                    >
+                      {getStatusText(recording.status, recording.processing_progress)}
+                    </span>
+                  </div>
+                </div>
 
               <div className="recording-item-details">
                 <div className="recording-detail-row">
@@ -163,7 +169,7 @@ export function RecordingsListScreen() {
                   <div className="recording-detail-row">
                     <span className="recording-detail-label">Audio:</span>
                     <span className="recording-detail-value">
-                      🎤 Included
+                      Included
                     </span>
                   </div>
                 )}
@@ -199,8 +205,9 @@ export function RecordingsListScreen() {
                   Error: {recording.error_message}
                 </div>
               )}
-            </div>
-          ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
