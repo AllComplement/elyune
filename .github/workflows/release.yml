@@ -1,0 +1,150 @@
+name: Build Extension and Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0, v1.2.3, etc.
+
+permissions:
+  contents: write  # Required for creating releases
+
+jobs:
+  build-and-release:
+    name: Build Extension & Create Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Get all history for proper versioning
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: elyune-extension/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+        working-directory: elyune-extension
+      
+      - name: Type check
+        run: npm run compile
+        working-directory: elyune-extension
+      
+      - name: Build Chrome extension
+        run: npm run build
+        working-directory: elyune-extension
+      
+      - name: Create Chrome zip
+        run: npm run zip
+        working-directory: elyune-extension
+      
+      - name: Build Firefox extension
+        run: npm run build:firefox
+        working-directory: elyune-extension
+      
+      - name: Create Firefox zip
+        run: npm run zip:firefox
+        working-directory: elyune-extension
+      
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Verify build outputs
+        run: |
+          echo "=== Chrome Build ==="
+          ls -lh elyune-extension/.output/chrome-mv3.zip
+          unzip -l elyune-extension/.output/chrome-mv3.zip | head -20
+          
+          echo -e "\n=== Firefox Build ==="
+          ls -lh elyune-extension/.output/firefox-mv3.zip
+          unzip -l elyune-extension/.output/firefox-mv3.zip | head -20
+      
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get commits since last tag
+          PREVIOUS_TAG=$(git describe --abbrev=0 --tags HEAD^ 2>/dev/null || echo "")
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # First release - get all commits
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            # Get commits since last tag
+            CHANGELOG=$(git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          fi
+          
+          # Save to file for release notes
+          cat > CHANGELOG.md << 'EOF'
+          ## What's Changed
+          
+          $CHANGELOG
+          
+          ## Installation
+          
+          ### Chrome/Edge
+          1. Download `elyune-chrome-v${{ steps.get_version.outputs.VERSION }}.zip`
+          2. Unzip the file
+          3. Open Chrome and go to `chrome://extensions/`
+          4. Enable "Developer mode" (toggle in top right)
+          5. Click "Load unpacked"
+          6. Select the unzipped folder
+          
+          ### Firefox
+          1. Download `elyune-firefox-v${{ steps.get_version.outputs.VERSION }}.zip`
+          2. Open Firefox and go to `about:debugging#/runtime/this-firefox`
+          3. Click "Load Temporary Add-on"
+          4. Select the zip file
+          
+          **Note:** Firefox temporary add-ons are removed when Firefox restarts. For permanent installation, the extension needs to be signed by Mozilla.
+          
+          ## Backend Setup
+          
+          For the complete Elyune experience with transcription and AI analysis, you'll need to run the backend:
+          
+          ```bash
+          cd elyune-backend
+          cp .env.example .env
+          # Configure your API keys in .env
+          docker compose up -d
+          ```
+          
+          See the [README](https://github.com/AllComplement/elyune/blob/main/README.md) for full setup instructions.
+          EOF
+      
+      - name: Rename artifacts
+        run: |
+          mv elyune-extension/.output/chrome-mv3.zip elyune-chrome-v${{ steps.get_version.outputs.VERSION }}.zip
+          mv elyune-extension/.output/firefox-mv3.zip elyune-firefox-v${{ steps.get_version.outputs.VERSION }}.zip
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Elyune v${{ steps.get_version.outputs.VERSION }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+          files: |
+            elyune-chrome-v${{ steps.get_version.outputs.VERSION }}.zip
+            elyune-firefox-v${{ steps.get_version.outputs.VERSION }}.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload Chrome artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: elyune-chrome-v${{ steps.get_version.outputs.VERSION }}
+          path: elyune-chrome-v${{ steps.get_version.outputs.VERSION }}.zip
+          retention-days: 90
+      
+      - name: Upload Firefox artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: elyune-firefox-v${{ steps.get_version.outputs.VERSION }}
+          path: elyune-firefox-v${{ steps.get_version.outputs.VERSION }}.zip
+          retention-days: 90
