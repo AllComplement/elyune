@@ -57,12 +57,12 @@ jobs:
       - name: Verify build outputs
         run: |
           echo "=== Chrome Build ==="
-          ls -lh elyune-extension/.output/chrome-mv3.zip
-          unzip -l elyune-extension/.output/chrome-mv3.zip | head -20
+          ls -lh elyune-extension/.output/elyune-1.0.0-chrome.zip
+          unzip -l elyune-extension/.output/elyune-1.0.0-chrome.zip | head -20
           
           echo -e "\n=== Firefox Build ==="
-          ls -lh elyune-extension/.output/firefox-mv3.zip
-          unzip -l elyune-extension/.output/firefox-mv3.zip | head -20
+          ls -lh elyune-extension/.output/elyune-1.0.0-firefox.zip
+          unzip -l elyune-extension/.output/elyune-1.0.0-firefox.zip | head -20
       
       - name: Generate changelog
         id: changelog
@@ -118,8 +118,8 @@ jobs:
       
       - name: Rename artifacts
         run: |
-          mv elyune-extension/.output/chrome-mv3.zip elyune-chrome-v${{ steps.get_version.outputs.VERSION }}.zip
-          mv elyune-extension/.output/firefox-mv3.zip elyune-firefox-v${{ steps.get_version.outputs.VERSION }}.zip
+          mv elyune-extension/.output/elyune-1.0.0-chrome.zip elyune-chrome-v${{ steps.get_version.outputs.VERSION }}.zip
+          mv elyune-extension/.output/elyune-1.0.0-firefox.zip elyune-firefox-v${{ steps.get_version.outputs.VERSION }}.zip
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
