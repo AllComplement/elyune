@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Recording, RecordingFile
+from .models import Recording, RecordingFile, RecordingAnalysis
 
 
 class RecordingFileSerializer(serializers.ModelSerializer):
@@ -10,10 +10,62 @@ class RecordingFileSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class RecordingAnalysisSerializer(serializers.ModelSerializer):
+    """Serializer for RecordingAnalysis model"""
+    class Meta:
+        model = RecordingAnalysis
+        fields = [
+            # Transcription fields
+            'transcription_text',
+            'transcription_confidence',
+            'transcription_language',
+            'transcription_num_speakers',
+            'transcription_audio_duration',
+            'transcription_processing_time',
+            'transcription_segments',
+            
+            # Summary fields
+            'summary_text',
+            'summary_data',
+            'summary_tokens',
+            'summary_processing_time',
+            'summary_model_version',
+            
+            # Action items fields
+            'action_items_text',
+            'action_items_data',
+            'action_items_tokens',
+            'action_items_processing_time',
+            'action_items_model_version',
+            
+            # Key points fields
+            'key_points_text',
+            'key_points_data',
+            'key_points_tokens',
+            'key_points_processing_time',
+            'key_points_model_version',
+            
+            # Sentiment fields
+            'sentiment_text',
+            'sentiment_data',
+            'sentiment_tokens',
+            'sentiment_processing_time',
+            'sentiment_model_version',
+            
+            # Metadata
+            'total_tokens_used',
+            'total_processing_time',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+
 class RecordingSerializer(serializers.ModelSerializer):
-    """Serializer for Recording model"""
+    """Serializer for Recording model with full analysis"""
     files = RecordingFileSerializer(many=True, read_only=True)
     user = serializers.StringRelatedField(read_only=True)
+    analysis = RecordingAnalysisSerializer(read_only=True)
 
     class Meta:
         model = Recording
@@ -21,11 +73,12 @@ class RecordingSerializer(serializers.ModelSerializer):
             'id', 'user', 'title', 'quality', 'fps', 'duration_seconds',
             'has_system_audio', 'has_microphone', 'original_filename',
             'file_size_bytes', 'mime_type', 'codec', 'status',
-            'error_message', 'files', 'created_at', 'updated_at', 'completed_at'
+            'error_message', 'processing_progress', 'processing_started_at',
+            'files', 'analysis', 'created_at', 'updated_at', 'completed_at'
         ]
         read_only_fields = [
-            'id', 'user', 'status', 'error_message', 'created_at',
-            'updated_at', 'completed_at'
+            'id', 'user', 'status', 'error_message', 'processing_progress',
+            'processing_started_at', 'created_at', 'updated_at', 'completed_at'
         ]
 
 
@@ -35,7 +88,7 @@ class RecordingListSerializer(serializers.ModelSerializer):
         model = Recording
         fields = [
             'id', 'title', 'quality', 'duration_seconds', 'status',
-            'original_filename', 'file_size_bytes', 'created_at'
+            'processing_progress', 'original_filename', 'file_size_bytes', 'created_at'
         ]
         read_only_fields = fields
 

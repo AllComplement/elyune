@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { RecordingScreen } from './components/RecordingScreen';
+import { RecordingsListScreen } from './components/RecordingsListScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { SignupScreen } from './components/SignupScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -40,6 +41,12 @@ function AppRoutes() {
         path="/"
         element={
           isAuthenticated ? <RecordingScreen /> : <Navigate to="/login" replace />
+        }
+      />
+      <Route
+        path="/history"
+        element={
+          isAuthenticated ? <RecordingsListScreen /> : <Navigate to="/login" replace />
         }
       />
 

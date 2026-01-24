@@ -1,11 +1,10 @@
-from celery import shared_task, chain
+from celery import shared_task, chain, chord
 from celery.utils.log import get_task_logger
 import subprocess
 import os
 import time
-from recordings.models import Recording, RecordingFile
-from .models import ProcessingJob, ProcessingStep
-from analysis.models import Transcription, TranscriptionSegment, AIAnalysis
+import random
+from recordings.models import Recording, RecordingFile, RecordingAnalysis
 from django.utils import timezone
 from django.conf import settings
 import boto3
@@ -49,19 +48,10 @@ def process_recording_pipeline(self, recording_id):
     try:
         recording = Recording.objects.get(id=recording_id)
         recording.status = 'processing'
-        recording.save()
-
-        # Create or update processing job
-        job, created = ProcessingJob.objects.update_or_create(
-            recording=recording,
-            defaults={
-                'celery_task_id': self.request.id,
-                'status': 'running',
-                'started_at': timezone.now(),
-                'completed_at': None,
-                'error_message': ''
-            }
-        )
+        recording.celery_task_id = self.request.id
+        recording.processing_started_at = timezone.now()
+        recording.processing_progress = 0
+        recording.save(update_fields=['status', 'celery_task_id', 'processing_started_at', 'processing_progress'])
 
         logger.info(f"Started processing pipeline for recording {recording_id}")
 
@@ -80,6 +70,10 @@ def process_recording_pipeline(self, recording_id):
 
     except Exception as exc:
         logger.error(f"Pipeline failed for {recording_id}: {exc}")
+        recording = Recording.objects.get(id=recording_id)
+        recording.status = 'failed'
+        recording.error_message = str(exc)
+        recording.save(update_fields=['status', 'error_message'])
         raise self.retry(exc=exc, countdown=60)
 
 
@@ -88,21 +82,12 @@ def convert_webm_to_mp4(self, recording_id):
     """
     Convert WebM to MP4 using FFmpeg
     """
-    step = None
     try:
         recording = Recording.objects.get(id=recording_id)
-        job = recording.processing_job
-
-        # Create or update processing step
-        step, _ = ProcessingStep.objects.update_or_create(
-            job=job,
-            step_name='video_conversion',
-            defaults={
-                'status': 'running',
-                'started_at': timezone.now(),
-                'error_message': ''
-            }
-        )
+        
+        # Update progress
+        recording.processing_progress = 10
+        recording.save(update_fields=['processing_progress'])
 
         logger.info(f"Starting video conversion for {recording_id}")
 
@@ -144,18 +129,16 @@ def convert_webm_to_mp4(self, recording_id):
             recording=recording,
             file_type='converted_mp4',
             defaults={
+                'user': recording.user,
                 's3_key': s3_key,
                 's3_bucket': settings.AWS_STORAGE_BUCKET_NAME,
                 'file_size_bytes': os.path.getsize(mp4_path)
             }
         )
 
-        # Update step
-        step.status = 'completed'
-        step.completed_at = timezone.now()
-        step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
-        step.output_file = s3_key
-        step.save()
+        # Update progress
+        recording.processing_progress = 25
+        recording.save(update_fields=['processing_progress'])
 
         # Cleanup
         os.remove(webm_path)
@@ -166,10 +149,10 @@ def convert_webm_to_mp4(self, recording_id):
 
     except Exception as exc:
         logger.error(f"Video conversion failed for {recording_id}: {exc}")
-        if step:
-            step.status = 'failed'
-            step.error_message = str(exc)
-            step.save()
+        recording = Recording.objects.get(id=recording_id)
+        recording.status = 'failed'
+        recording.error_message = f"Video conversion failed: {str(exc)}"
+        recording.save(update_fields=['status', 'error_message'])
         raise self.retry(exc=exc, countdown=120)
 
 
@@ -178,21 +161,12 @@ def extract_audio_from_video(self, recording_id):
     """
     Extract audio track for transcription (WAV format for Deepgram)
     """
-    step = None
     try:
         recording = Recording.objects.get(id=recording_id)
-        job = recording.processing_job
-
-        # Create or update processing step
-        step, _ = ProcessingStep.objects.update_or_create(
-            job=job,
-            step_name='audio_extraction',
-            defaults={
-                'status': 'running',
-                'started_at': timezone.now(),
-                'error_message': ''
-            }
-        )
+        
+        # Update progress
+        recording.processing_progress = 35
+        recording.save(update_fields=['processing_progress'])
 
         logger.info(f"Starting audio extraction for {recording_id}")
 
@@ -233,18 +207,16 @@ def extract_audio_from_video(self, recording_id):
             recording=recording,
             file_type='audio_extract',
             defaults={
+                'user': recording.user,
                 's3_key': s3_key,
                 's3_bucket': settings.AWS_STORAGE_BUCKET_NAME,
                 'file_size_bytes': os.path.getsize(audio_path)
             }
         )
 
-        # Update step
-        step.status = 'completed'
-        step.completed_at = timezone.now()
-        step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
-        step.output_file = s3_key
-        step.save()
+        # Update progress
+        recording.processing_progress = 50
+        recording.save(update_fields=['processing_progress'])
 
         # Cleanup
         os.remove(webm_path)
@@ -255,10 +227,10 @@ def extract_audio_from_video(self, recording_id):
 
     except Exception as exc:
         logger.error(f"Audio extraction failed for {recording_id}: {exc}")
-        if step:
-            step.status = 'failed'
-            step.error_message = str(exc)
-            step.save()
+        recording = Recording.objects.get(id=recording_id)
+        recording.status = 'failed'
+        recording.error_message = f"Audio extraction failed: {str(exc)}"
+        recording.save(update_fields=['status', 'error_message'])
         raise self.retry(exc=exc, countdown=120)
 
 
@@ -267,21 +239,12 @@ def transcribe_audio(self, recording_id):
     """
     Send audio to Deepgram API for transcription with speaker diarization
     """
-    step = None
     try:
         recording = Recording.objects.get(id=recording_id)
-        job = recording.processing_job
-
-        # Create or update processing step
-        step, _ = ProcessingStep.objects.update_or_create(
-            job=job,
-            step_name='speech_to_text',
-            defaults={
-                'status': 'running',
-                'started_at': timezone.now(),
-                'error_message': ''
-            }
-        )
+        
+        # Update progress
+        recording.processing_progress = 60
+        recording.save(update_fields=['processing_progress'])
 
         logger.info(f"Starting transcription for {recording_id}")
 
@@ -327,36 +290,18 @@ def transcribe_audio(self, recording_id):
         result = response.results.channels[0].alternatives[0]
         utterances = response.results.utterances if hasattr(response.results, 'utterances') else []
 
-        # Create or update Transcription
-        transcription, created = Transcription.objects.update_or_create(
-            recording=recording,
-            defaults={
-                'full_text': result.transcript,
-                'confidence_score': result.confidence,
-                'language_detected': response.metadata.language if hasattr(response.metadata, 'language') else 'en',
-                'num_speakers': len(set(u.speaker for u in utterances)) if utterances else 0,
-                'audio_duration_seconds': response.metadata.duration,
-                'processing_time_seconds': processing_time,
-                'deepgram_response': response.to_dict()
-            }
-        )
-
-        # Clear existing segments if updating (to ensure clean slate for segments)
-        if not created:
-            transcription.segments.all().delete()
-
-        # Create segments from utterances
+        # Build segments array as JSON
+        segments = []
         if utterances:
             for utterance in utterances:
-                TranscriptionSegment.objects.create(
-                    transcription=transcription,
-                    start_time_seconds=utterance.start,
-                    end_time_seconds=utterance.end,
-                    text=utterance.transcript,
-                    confidence_score=utterance.confidence,
-                    speaker_id=utterance.speaker,
-                    speaker_label=f"Speaker {utterance.speaker}",
-                    words=[
+                segments.append({
+                    'start': utterance.start,
+                    'end': utterance.end,
+                    'text': utterance.transcript,
+                    'confidence': utterance.confidence,
+                    'speaker_id': utterance.speaker,
+                    'speaker_label': f"Speaker {utterance.speaker}",
+                    'words': [
                         {
                             'word': w.word,
                             'start': w.start,
@@ -365,27 +310,40 @@ def transcribe_audio(self, recording_id):
                         }
                         for w in utterance.words
                     ] if utterance.words else []
-                )
+                })
 
-        # Update step
-        step.status = 'completed'
-        step.completed_at = timezone.now()
-        step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
-        step.metadata = {'num_speakers': transcription.num_speakers}
-        step.save()
+        # Create or update RecordingAnalysis with transcription data
+        analysis, created = RecordingAnalysis.objects.update_or_create(
+            recording=recording,
+            defaults={
+                'user': recording.user,
+                'transcription_text': result.transcript,
+                'transcription_confidence': result.confidence,
+                'transcription_language': response.metadata.language if hasattr(response.metadata, 'language') else 'en',
+                'transcription_num_speakers': len(set(u.speaker for u in utterances)) if utterances else 0,
+                'transcription_audio_duration': response.metadata.duration,
+                'transcription_processing_time': processing_time,
+                'transcription_segments': segments,
+                'deepgram_response': response.to_dict()
+            }
+        )
+
+        # Update progress
+        recording.processing_progress = 70
+        recording.save(update_fields=['processing_progress'])
 
         # Cleanup
         os.remove(audio_path)
 
-        logger.info(f"Transcription completed for {recording_id}")
+        logger.info(f"Transcription completed for {recording_id} ({len(segments)} segments)")
         return recording_id
 
     except Exception as exc:
         logger.error(f"Transcription failed for {recording_id}: {exc}")
-        if step:
-            step.status = 'failed'
-            step.error_message = str(exc)
-            step.save()
+        recording = Recording.objects.get(id=recording_id)
+        recording.status = 'failed'
+        recording.error_message = f"Transcription failed: {str(exc)}"
+        recording.save(update_fields=['status', 'error_message'])
         raise self.retry(exc=exc, countdown=180)
 
 
@@ -394,7 +352,6 @@ def transcribe_audio(self, recording_id):
 @shared_task(bind=True, max_retries=3)
 def generate_and_save_summary(self, recording_id, formatted_transcript, model_name):
     """Generate summary analysis (parallel sub-task)"""
-    import random
     from time import sleep
     
     try:
@@ -410,19 +367,18 @@ def generate_and_save_summary(self, recording_id, formatted_transcript, model_na
         # Generate analysis
         summary_result = generate_summary(model, formatted_transcript)
         
-        # Save to database (idempotent)
-        AIAnalysis.objects.update_or_create(
-            recording=recording,
-            analysis_type='summary',
-            defaults={
-                'result_data': summary_result['data'],
-                'result_text': summary_result['text'],
-                'model_version': model_name,
-                'tokens_used': summary_result.get('tokens', 0),
-                'processing_time_seconds': summary_result['time'],
-                'gemini_response': summary_result.get('response', {})
-            }
-        )
+        # Update RecordingAnalysis (idempotent)
+        analysis = RecordingAnalysis.objects.get(recording=recording)
+        analysis.summary_text = summary_result['text']
+        analysis.summary_data = summary_result['data']
+        analysis.summary_tokens = summary_result.get('tokens', 0)
+        analysis.summary_processing_time = summary_result['time']
+        analysis.summary_model_version = model_name
+        analysis.summary_response = summary_result.get('response', {})
+        analysis.save(update_fields=[
+            'summary_text', 'summary_data', 'summary_tokens',
+            'summary_processing_time', 'summary_model_version', 'summary_response'
+        ])
         
         logger.info(f"[Summary] Completed for {recording_id} in {summary_result['time']:.2f}s")
         return {'type': 'summary', 'status': 'success', 'time': summary_result['time']}
@@ -442,11 +398,9 @@ def generate_and_save_summary(self, recording_id, formatted_transcript, model_na
         # Store partial failure
         try:
             recording = Recording.objects.get(id=recording_id)
-            AIAnalysis.objects.update_or_create(
-                recording=recording,
-                analysis_type='summary',
-                defaults={'result_text': f'Failed: {str(exc)[:500]}'}
-            )
+            analysis = RecordingAnalysis.objects.get(recording=recording)
+            analysis.summary_text = f'Failed: {str(exc)[:500]}'
+            analysis.save(update_fields=['summary_text'])
         except Exception:
             pass
         
@@ -456,7 +410,58 @@ def generate_and_save_summary(self, recording_id, formatted_transcript, model_na
 @shared_task(bind=True, max_retries=3)
 def generate_and_save_action_items(self, recording_id, formatted_transcript, model_name):
     """Extract action items analysis (parallel sub-task)"""
-    import random
+    from time import sleep
+    
+    try:
+        recording = Recording.objects.get(id=recording_id)
+        
+        # Initialize Gemini
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(model_name)
+        
+        logger.info(f"[ActionItems] Starting for {recording_id}")
+        
+        # Generate analysis
+        action_items_result = extract_action_items(model, formatted_transcript)
+        
+        # Update RecordingAnalysis (idempotent)
+        analysis = RecordingAnalysis.objects.get(recording=recording)
+        analysis.action_items_text = action_items_result['text']
+        analysis.action_items_data = action_items_result['data']
+        analysis.action_items_tokens = action_items_result.get('tokens', 0)
+        analysis.action_items_processing_time = action_items_result['time']
+        analysis.action_items_model_version = model_name
+        analysis.action_items_response = action_items_result.get('response', {})
+        analysis.save(update_fields=[
+            'action_items_text', 'action_items_data', 'action_items_tokens',
+            'action_items_processing_time', 'action_items_model_version', 'action_items_response'
+        ])
+        
+        logger.info(f"[ActionItems] Completed for {recording_id} in {action_items_result['time']:.2f}s")
+        return {'type': 'action_items', 'status': 'success', 'time': action_items_result['time']}
+        
+    except Exception as exc:
+        logger.error(f"[ActionItems] Failed for {recording_id}: {exc}")
+        
+        # Check for rate limiting
+        error_str = str(exc).lower()
+        if '429' in error_str or 'rate limit' in error_str or 'quota' in error_str:
+            wait_time = min((2 ** self.request.retries) + random.uniform(0, 1), 60)
+            logger.warning(f"[ActionItems] Rate limited, waiting {wait_time:.2f}s before retry...")
+            sleep(wait_time)
+            raise self.retry(exc=exc, countdown=int(wait_time))
+        
+        # Store partial failure
+        try:
+            recording = Recording.objects.get(id=recording_id)
+            analysis = RecordingAnalysis.objects.get(recording=recording)
+            analysis.action_items_text = f'Failed: {str(exc)[:500]}'
+            analysis.save(update_fields=['action_items_text'])
+        except Exception:
+            pass
+        
+        return {'type': 'action_items', 'status': 'failed', 'error': str(exc)[:200]}
     from time import sleep
     
     try:
@@ -512,7 +517,6 @@ def generate_and_save_action_items(self, recording_id, formatted_transcript, mod
 @shared_task(bind=True, max_retries=3)
 def generate_and_save_key_points(self, recording_id, formatted_transcript, model_name):
     """Extract key points analysis (parallel sub-task)"""
-    import random
     from time import sleep
     
     try:
@@ -526,18 +530,18 @@ def generate_and_save_key_points(self, recording_id, formatted_transcript, model
         
         key_points_result = extract_key_points(model, formatted_transcript)
         
-        AIAnalysis.objects.update_or_create(
-            recording=recording,
-            analysis_type='key_points',
-            defaults={
-                'result_data': key_points_result['data'],
-                'result_text': key_points_result['text'],
-                'model_version': model_name,
-                'tokens_used': key_points_result.get('tokens', 0),
-                'processing_time_seconds': key_points_result['time'],
-                'gemini_response': key_points_result.get('response', {})
-            }
-        )
+        # Update RecordingAnalysis (idempotent)
+        analysis = RecordingAnalysis.objects.get(recording=recording)
+        analysis.key_points_text = key_points_result['text']
+        analysis.key_points_data = key_points_result['data']
+        analysis.key_points_tokens = key_points_result.get('tokens', 0)
+        analysis.key_points_processing_time = key_points_result['time']
+        analysis.key_points_model_version = model_name
+        analysis.key_points_response = key_points_result.get('response', {})
+        analysis.save(update_fields=[
+            'key_points_text', 'key_points_data', 'key_points_tokens',
+            'key_points_processing_time', 'key_points_model_version', 'key_points_response'
+        ])
         
         logger.info(f"[KeyPoints] Completed for {recording_id} in {key_points_result['time']:.2f}s")
         return {'type': 'key_points', 'status': 'success', 'time': key_points_result['time']}
@@ -552,13 +556,12 @@ def generate_and_save_key_points(self, recording_id, formatted_transcript, model
             sleep(wait_time)
             raise self.retry(exc=exc, countdown=int(wait_time))
         
+        # Store partial failure
         try:
             recording = Recording.objects.get(id=recording_id)
-            AIAnalysis.objects.update_or_create(
-                recording=recording,
-                analysis_type='key_points',
-                defaults={'result_text': f'Failed: {str(exc)[:500]}'}
-            )
+            analysis = RecordingAnalysis.objects.get(recording=recording)
+            analysis.key_points_text = f'Failed: {str(exc)[:500]}'
+            analysis.save(update_fields=['key_points_text'])
         except Exception:
             pass
         
@@ -568,7 +571,6 @@ def generate_and_save_key_points(self, recording_id, formatted_transcript, model
 @shared_task(bind=True, max_retries=3)
 def generate_and_save_sentiment(self, recording_id, formatted_transcript, model_name):
     """Analyze sentiment (parallel sub-task)"""
-    import random
     from time import sleep
     
     try:
@@ -582,18 +584,18 @@ def generate_and_save_sentiment(self, recording_id, formatted_transcript, model_
         
         sentiment_result = analyze_sentiment(model, formatted_transcript)
         
-        AIAnalysis.objects.update_or_create(
-            recording=recording,
-            analysis_type='sentiment',
-            defaults={
-                'result_data': sentiment_result['data'],
-                'result_text': sentiment_result['text'],
-                'model_version': model_name,
-                'tokens_used': sentiment_result.get('tokens', 0),
-                'processing_time_seconds': sentiment_result['time'],
-                'gemini_response': sentiment_result.get('response', {})
-            }
-        )
+        # Update RecordingAnalysis (idempotent)
+        analysis = RecordingAnalysis.objects.get(recording=recording)
+        analysis.sentiment_text = sentiment_result['text']
+        analysis.sentiment_data = sentiment_result['data']
+        analysis.sentiment_tokens = sentiment_result.get('tokens', 0)
+        analysis.sentiment_processing_time = sentiment_result['time']
+        analysis.sentiment_model_version = model_name
+        analysis.sentiment_response = sentiment_result.get('response', {})
+        analysis.save(update_fields=[
+            'sentiment_text', 'sentiment_data', 'sentiment_tokens',
+            'sentiment_processing_time', 'sentiment_model_version', 'sentiment_response'
+        ])
         
         logger.info(f"[Sentiment] Completed for {recording_id} in {sentiment_result['time']:.2f}s")
         return {'type': 'sentiment', 'status': 'success', 'time': sentiment_result['time']}
@@ -608,13 +610,12 @@ def generate_and_save_sentiment(self, recording_id, formatted_transcript, model_
             sleep(wait_time)
             raise self.retry(exc=exc, countdown=int(wait_time))
         
+        # Store partial failure
         try:
             recording = Recording.objects.get(id=recording_id)
-            AIAnalysis.objects.update_or_create(
-                recording=recording,
-                analysis_type='sentiment',
-                defaults={'result_text': f'Failed: {str(exc)[:500]}'}
-            )
+            analysis = RecordingAnalysis.objects.get(recording=recording)
+            analysis.sentiment_text = f'Failed: {str(exc)[:500]}'
+            analysis.save(update_fields=['sentiment_text'])
         except Exception:
             pass
         
@@ -629,8 +630,7 @@ def finalize_parallel_analysis(self, results, recording_id):
     """
     try:
         recording = Recording.objects.get(id=recording_id)
-        job = recording.processing_job
-        step = ProcessingStep.objects.get(job=job, step_name='ai_analysis')
+        analysis = RecordingAnalysis.objects.get(recording=recording)
         
         # Analyze results
         failed_analyses = [r for r in results if r['status'] == 'failed']
@@ -641,70 +641,58 @@ def finalize_parallel_analysis(self, results, recording_id):
         
         logger.info(f"Parallel analysis complete: {len(successful_analyses)}/4 succeeded in {total_time:.2f}s")
         
-        # Update step based on results
+        # Update totals in RecordingAnalysis
+        analysis.update_totals()
+        
+        # Update recording based on results
         if len(failed_analyses) == 4:
             # All failed - mark as failed
-            step.status = 'failed'
-            step.error_message = 'All AI analyses failed: ' + '; '.join([f"{f['type']}: {f.get('error', 'unknown')}" for f in failed_analyses])
+            error_msg = 'All AI analyses failed: ' + '; '.join([f"{f['type']}: {f.get('error', 'unknown')}" for f in failed_analyses])
             recording.status = 'failed'
-            recording.error_message = step.error_message
+            recording.error_message = error_msg
+            recording.processing_progress = 100
             logger.error(f"All analyses failed for {recording_id}")
         elif failed_analyses:
             # Partial failure - mark as completed with warning
             failed_types = [f['type'] for f in failed_analyses]
-            step.status = 'completed'
-            step.error_message = f'{len(failed_analyses)}/4 analyses failed: {", ".join(failed_types)}'
             recording.status = 'completed'
             recording.completed_at = timezone.now()
+            recording.processing_progress = 100
+            recording.error_message = f'{len(failed_analyses)}/4 analyses failed: {", ".join(failed_types)}'
             logger.warning(f"Partial success for {recording_id}: {failed_types} failed")
         else:
             # All succeeded
-            step.status = 'completed'
             recording.status = 'completed'
             recording.completed_at = timezone.now()
+            recording.processing_progress = 100
             logger.info(f"All analyses succeeded for {recording_id}")
         
-        step.completed_at = timezone.now()
-        step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
-        step.save()
         recording.save()
-
-        # Mark job as completed (even with partial failures)
-        if recording.status == 'completed':
-            job.status = 'completed'
-            job.completed_at = timezone.now()
-            job.progress_percentage = 100
-            job.save()
 
         return recording_id
         
     except Exception as exc:
         logger.error(f"Failed to finalize parallel analysis for {recording_id}: {exc}")
+        recording = Recording.objects.get(id=recording_id)
+        recording.status = 'failed'
+        recording.error_message = f"Finalization failed: {str(exc)}"
+        recording.save()
         raise
 
 
 @shared_task(bind=True, max_retries=2)
 def analyze_transcription(self, recording_id):
     """
-    Orchestrate parallel AI analysis using Celery groups with callback
+    Orchestrate parallel AI analysis using Celery chord with callback
     Generates: summary, action items, key points, sentiment analysis
     """
-    step = None
     try:
         recording = Recording.objects.get(id=recording_id)
-        job = recording.processing_job
-        transcription = recording.transcription
+        analysis = recording.analysis
 
-        # Create or update processing step
-        step, _ = ProcessingStep.objects.update_or_create(
-            job=job,
-            step_name='ai_analysis',
-            defaults={
-                'status': 'running',
-                'started_at': timezone.now(),
-                'error_message': ''
-            }
-        )
+        # Update progress
+        recording.processing_progress = 80
+        recording.save(update_fields=['processing_progress'])
 
         logger.info(f"Starting parallel AI analysis for {recording_id}")
 
@@ -713,7 +701,6 @@ def analyze_transcription(self, recording_id):
             raise Exception("GEMINI_API_KEY not configured")
 
         import google.generativeai as genai
-        from celery import chord
 
         # Configure Gemini and determine model
         genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -726,7 +713,7 @@ def analyze_transcription(self, recording_id):
             model_name = 'gemini-2.0-flash'
 
         # Prepare transcript with speaker info
-        formatted_transcript = format_transcript_with_speakers(transcription)
+        formatted_transcript = format_transcript_with_speakers(analysis)
 
         # Launch all 4 analyses in parallel using Celery chord (group + callback)
         logger.info(f"Launching 4 parallel analysis tasks for {recording_id}")
@@ -745,30 +732,27 @@ def analyze_transcription(self, recording_id):
 
     except Exception as exc:
         logger.error(f"AI analysis orchestration failed for {recording_id}: {exc}")
-        if step:
-            step.status = 'failed'
-            step.error_message = str(exc)
-            step.save()
 
         # Mark recording as failed
-        if 'recording' in locals():
-            recording.status = 'failed'
-            recording.error_message = str(exc)
-            recording.save()
+        recording = Recording.objects.get(id=recording_id)
+        recording.status = 'failed'
+        recording.error_message = f"AI analysis failed: {str(exc)}"
+        recording.save()
 
         raise self.retry(exc=exc, countdown=120)
 
 
 # Helper functions for AI analysis
 
-def format_transcript_with_speakers(transcription):
+def format_transcript_with_speakers(analysis):
     """Format transcript with speaker labels for better AI analysis"""
-    segments = transcription.segments.all()
+    segments = analysis.transcription_segments  # This is now a JSON array
     formatted_lines = []
 
     for segment in segments:
-        speaker = segment.speaker_label or "Unknown Speaker"
-        formatted_lines.append(f"{speaker}: {segment.text}")
+        speaker = segment.get('speaker_label', 'Unknown Speaker')
+        text = segment.get('text', '')
+        formatted_lines.append(f"{speaker}: {text}")
 
     return "\n".join(formatted_lines)
 

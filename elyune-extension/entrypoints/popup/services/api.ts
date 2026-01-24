@@ -265,6 +265,20 @@ class ApiClient {
   }
 
   /**
+   * Get list of user's recordings
+   */
+  async getRecordings(): Promise<{ count: number; results: any[] }> {
+    return await this.request('/api/v1/recordings/');
+  }
+
+  /**
+   * Get recording details with analysis
+   */
+  async getRecording(recordingId: string): Promise<any> {
+    return await this.request(`/api/v1/recordings/${recordingId}/`);
+  }
+
+  /**
    * Test connection to backend
    */
   async testConnection(): Promise<boolean> {

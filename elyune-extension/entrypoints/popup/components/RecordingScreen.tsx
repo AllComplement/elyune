@@ -142,6 +142,10 @@ export function RecordingScreen() {
     navigate('/settings');
   };
 
+  const handleHistoryClick = () => {
+    navigate('/history');
+  };
+
   return (
     <div className="popup-container">
       <div className="recording-header">
@@ -152,6 +156,13 @@ export function RecordingScreen() {
               {user.username}
             </span>
           )}
+          <button
+            onClick={handleHistoryClick}
+            className="history-icon-btn"
+            title="View recordings history"
+          >
+            📋
+          </button>
           <button
             onClick={handleSettingsClick}
             className="settings-icon-btn"

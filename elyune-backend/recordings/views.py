@@ -24,8 +24,20 @@ class RecordingViewSet(viewsets.ModelViewSet):
         return RecordingSerializer
 
     def get_queryset(self):
-        """Users can only see their own recordings"""
-        return Recording.objects.filter(user=self.request.user)
+        """
+        Users can only see their own recordings
+        
+        Query optimization:
+        - select_related('analysis'): JOIN RecordingAnalysis (1-to-1) in single query
+        - prefetch_related('files'): Efficiently fetch all RecordingFiles in one query
+        
+        This reduces queries from ~7+ to ~3 per recording detail request.
+        """
+        return Recording.objects.select_related(
+            'analysis'
+        ).prefetch_related(
+            'files'
+        ).filter(user=self.request.user)
 
     def perform_create(self, serializer):
         """Auto-assign user when creating recording"""
@@ -143,6 +155,7 @@ class RecordingViewSet(viewsets.ModelViewSet):
         # Create RecordingFile entry
         RecordingFile.objects.create(
             recording=recording,
+            user=request.user,
             file_type='original_webm',
             s3_key=serializer.validated_data['s3_key'],
             s3_bucket=settings.AWS_STORAGE_BUCKET_NAME,
@@ -150,7 +163,7 @@ class RecordingViewSet(viewsets.ModelViewSet):
         )
 
         # Trigger processing pipeline
-        from processing.tasks import process_recording_pipeline
+        from recordings.tasks import process_recording_pipeline
         process_recording_pipeline.delay(str(recording.id))
 
         return Response({

@@ -477,12 +477,14 @@ async function closeOffscreenDocument() {
 /**
  * Monitor a recording's processing status and notify when complete
  * Polls the backend API every 10 seconds for up to 5 minutes
+ * Now tracks processing_progress for better user feedback
  */
 async function monitorRecordingProcessing(recordingId: string, filename: string) {
   console.log('[Background] Starting to monitor recording:', recordingId);
   
   const maxAttempts = 30; // 30 attempts * 10s = 5 minutes max
   let attempts = 0;
+  let lastProgress = 0;
   
   const checkStatus = async () => {
     attempts++;
@@ -519,18 +521,44 @@ async function monitorRecordingProcessing(recordingId: string, filename: string)
       }
       
       const recording = await response.json();
-      console.log(`[Background] Recording status (attempt ${attempts}):`, recording.status);
+      const progress = recording.processing_progress || 0;
+      
+      console.log(`[Background] Recording status (attempt ${attempts}):`, recording.status, `(${progress}%)`);
+      
+      // Log progress updates (only when progress changes significantly)
+      if (progress - lastProgress >= 10) {
+        console.log(`[Background] Processing progress: ${progress}%`);
+        lastProgress = progress;
+      }
       
       // Check if processing is complete
       if (recording.status === 'completed') {
         console.log('[Background] ✅ Processing complete!');
+        
+        // Build success message with analysis info
+        let message = `${filename} has been transcribed and analyzed.`;
+        if (recording.analysis) {
+          const details = [];
+          if (recording.analysis.transcription_num_speakers) {
+            details.push(`${recording.analysis.transcription_num_speakers} speakers detected`);
+          }
+          if (recording.analysis.transcription_audio_duration) {
+            const mins = Math.floor(recording.analysis.transcription_audio_duration / 60);
+            const secs = Math.floor(recording.analysis.transcription_audio_duration % 60);
+            details.push(`${mins}:${secs.toString().padStart(2, '0')} duration`);
+          }
+          if (details.length > 0) {
+            message += ` (${details.join(', ')})`;
+          }
+        }
+        message += ' View results in your dashboard.';
         
         // Show success notification
         await chrome.notifications.create({
           type: 'basic',
           iconUrl: browser.runtime.getURL('/icon/128.png'),
           title: 'Recording Processed',
-          message: `${filename} has been transcribed and analyzed. View results in your dashboard.`,
+          message,
           priority: 2,
         });
         
@@ -560,7 +588,7 @@ async function monitorRecordingProcessing(recordingId: string, filename: string)
             type: 'basic',
             iconUrl: browser.runtime.getURL('/icon/128.png'),
             title: 'Processing Taking Longer',
-            message: `${filename} is still being processed. Check your dashboard for updates.`,
+            message: `${filename} is still being processed (${progress}% complete). Check your dashboard for updates.`,
           });
         }
       }

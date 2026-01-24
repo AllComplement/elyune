@@ -2,10 +2,8 @@ from django.test import TestCase
 from unittest.mock import patch, MagicMock, call
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from recordings.models import Recording, RecordingFile
-from processing.models import ProcessingJob, ProcessingStep
-from analysis.models import Transcription, TranscriptionSegment, AIAnalysis
-from processing.tasks import (
+from recordings.models import Recording, RecordingFile, RecordingAnalysis
+from recordings.tasks import (
     generate_and_save_summary,
     generate_and_save_action_items,
     generate_and_save_key_points,
@@ -22,7 +20,7 @@ class ParallelAnalysisSubTaskTests(TestCase):
     """Test individual parallel AI analysis sub-tasks"""
     
     def setUp(self):
-        """Create test user, recording, and transcription"""
+        """Create test user, recording, and analysis"""
         self.user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
@@ -38,28 +36,23 @@ class ParallelAnalysisSubTaskTests(TestCase):
             fps=30
         )
         
-        self.processing_job = ProcessingJob.objects.create(
+        # Create RecordingAnalysis with transcription data
+        self.analysis = RecordingAnalysis.objects.create(
             recording=self.recording,
-            status='running'
-        )
-        
-        self.transcription = Transcription.objects.create(
-            recording=self.recording,
-            full_text='This is a test transcription.',
-            confidence_score=0.95,
-            audio_duration_seconds=10.0,
-            processing_time_seconds=1.5,
-            num_speakers=1
-        )
-        
-        TranscriptionSegment.objects.create(
-            transcription=self.transcription,
-            start_time_seconds=0.0,
-            end_time_seconds=5.0,
-            text='This is a test.',
-            confidence_score=0.95,
-            speaker_id=1,
-            speaker_label='Speaker 1'
+            user=self.user,
+            transcription_text='This is a test transcription.',
+            transcription_confidence=0.95,
+            transcription_audio_duration=10.0,
+            transcription_processing_time=1.5,
+            transcription_num_speakers=1,
+            transcription_segments=[{
+                'start': 0.0,
+                'end': 5.0,
+                'text': 'This is a test.',
+                'confidence': 0.95,
+                'speaker_id': 1,
+                'speaker_label': 'Speaker 1'
+            }]
         )
     
     @patch('google.generativeai.GenerativeModel')
@@ -85,14 +78,11 @@ class ParallelAnalysisSubTaskTests(TestCase):
         self.assertEqual(result['type'], 'summary')
         self.assertIn('time', result)
         
-        # Verify database record created
-        analysis = AIAnalysis.objects.get(
-            recording=self.recording,
-            analysis_type='summary'
-        )
-        self.assertEqual(analysis.result_text, 'This is a test summary.')
-        self.assertEqual(analysis.model_version, 'gemini-2.5-flash')
-        self.assertEqual(analysis.tokens_used, 50)
+        # Verify database record updated
+        self.analysis.refresh_from_db()
+        self.assertEqual(self.analysis.summary_text, 'This is a test summary.')
+        self.assertEqual(self.analysis.summary_model_version, 'gemini-2.5-flash')
+        self.assertEqual(self.analysis.summary_tokens, 50)
     
     @patch('google.generativeai.GenerativeModel')
     def test_generate_and_save_summary_idempotent(self, mock_genai_model):
@@ -112,14 +102,9 @@ class ParallelAnalysisSubTaskTests(TestCase):
             'gemini-2.5-flash'
         )
         
-        # Verify one record
-        self.assertEqual(
-            AIAnalysis.objects.filter(
-                recording=self.recording,
-                analysis_type='summary'
-            ).count(),
-            1
-        )
+        # Verify summary text set
+        self.analysis.refresh_from_db()
+        self.assertEqual(self.analysis.summary_text, 'First summary.')
         
         # Update mock response
         mock_response.text = 'Updated summary.'
@@ -131,13 +116,11 @@ class ParallelAnalysisSubTaskTests(TestCase):
             'gemini-2.5-flash'
         )
         
-        # Verify still only one record, but updated
-        analyses = AIAnalysis.objects.filter(
-            recording=self.recording,
-            analysis_type='summary'
-        )
-        self.assertEqual(analyses.count(), 1)
-        self.assertEqual(analyses.first().result_text, 'Updated summary.')
+        # Verify record updated (not duplicated)
+        self.analysis.refresh_from_db()
+        self.assertEqual(self.analysis.summary_text, 'Updated summary.')
+        # Verify only one RecordingAnalysis exists
+        self.assertEqual(RecordingAnalysis.objects.filter(recording=self.recording).count(), 1)
     
     @patch('random.uniform')
     @patch('time.sleep')
@@ -183,11 +166,8 @@ class ParallelAnalysisSubTaskTests(TestCase):
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['type'], 'action_items')
         
-        analysis = AIAnalysis.objects.get(
-            recording=self.recording,
-            analysis_type='action_items'
-        )
-        self.assertIn('Task one', analysis.result_text)
+        self.analysis.refresh_from_db()
+        self.assertIn('Task one', self.analysis.action_items_text)
     
     @patch('google.generativeai.GenerativeModel')
     def test_generate_and_save_key_points_success(self, mock_genai_model):
@@ -208,11 +188,8 @@ class ParallelAnalysisSubTaskTests(TestCase):
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['type'], 'key_points')
         
-        analysis = AIAnalysis.objects.get(
-            recording=self.recording,
-            analysis_type='key_points'
-        )
-        self.assertIn('Point 1', analysis.result_text)
+        self.analysis.refresh_from_db()
+        self.assertIn('Point 1', self.analysis.key_points_text)
     
     @patch('google.generativeai.GenerativeModel')
     def test_generate_and_save_sentiment_success(self, mock_genai_model):
@@ -233,11 +210,8 @@ class ParallelAnalysisSubTaskTests(TestCase):
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['type'], 'sentiment')
         
-        analysis = AIAnalysis.objects.get(
-            recording=self.recording,
-            analysis_type='sentiment'
-        )
-        self.assertIn('Positive', analysis.result_text)
+        self.analysis.refresh_from_db()
+        self.assertIn('Positive', self.analysis.sentiment_text)
 
 
 class FinalizeParallelAnalysisTests(TestCase):
@@ -254,19 +228,16 @@ class FinalizeParallelAnalysisTests(TestCase):
             user=self.user,
             original_filename='test.webm',
             status='processing',
-            file_size_bytes=1000000
+            file_size_bytes=1000000,
+            quality='1080p',
+            fps=30
         )
         
-        self.processing_job = ProcessingJob.objects.create(
+        # Create RecordingAnalysis
+        self.analysis = RecordingAnalysis.objects.create(
             recording=self.recording,
-            status='running'
-        )
-        
-        self.step = ProcessingStep.objects.create(
-            job=self.processing_job,
-            step_name='ai_analysis',
-            status='running',
-            started_at=timezone.now()
+            user=self.user,
+            transcription_text='Test transcription'
         )
     
     def test_finalize_all_success(self):
@@ -282,20 +253,11 @@ class FinalizeParallelAnalysisTests(TestCase):
         
         # Refresh from database
         self.recording.refresh_from_db()
-        self.step.refresh_from_db()
-        self.processing_job.refresh_from_db()
         
         # Verify recording completed
         self.assertEqual(self.recording.status, 'completed')
         self.assertIsNotNone(self.recording.completed_at)
-        
-        # Verify step completed
-        self.assertEqual(self.step.status, 'completed')
-        self.assertEqual(self.step.error_message, '')
-        
-        # Verify job completed
-        self.assertEqual(self.processing_job.status, 'completed')
-        self.assertEqual(self.processing_job.progress_percentage, 100)
+        self.assertEqual(self.recording.processing_progress, 100)
     
     def test_finalize_partial_failure(self):
         """Test finalization when 1-3 analyses fail"""
@@ -309,13 +271,11 @@ class FinalizeParallelAnalysisTests(TestCase):
         finalize_parallel_analysis(results, str(self.recording.id))
         
         self.recording.refresh_from_db()
-        self.step.refresh_from_db()
         
         # Still mark as completed with warning
         self.assertEqual(self.recording.status, 'completed')
-        self.assertEqual(self.step.status, 'completed')
-        self.assertIn('1/4 analyses failed', self.step.error_message)
-        self.assertIn('action_items', self.step.error_message)
+        self.assertIn('1/4 analyses failed', self.recording.error_message)
+        self.assertIn('action_items', self.recording.error_message)
     
     def test_finalize_all_failed(self):
         """Test finalization when all 4 analyses fail"""
@@ -329,12 +289,10 @@ class FinalizeParallelAnalysisTests(TestCase):
         finalize_parallel_analysis(results, str(self.recording.id))
         
         self.recording.refresh_from_db()
-        self.step.refresh_from_db()
         
         # Mark as failed
         self.assertEqual(self.recording.status, 'failed')
-        self.assertEqual(self.step.status, 'failed')
-        self.assertIn('All AI analyses failed', self.step.error_message)
+        self.assertIn('All AI analyses failed', self.recording.error_message)
 
 
 class AnalyzeTranscriptionOrchestrationTests(TestCase):
@@ -351,24 +309,31 @@ class AnalyzeTranscriptionOrchestrationTests(TestCase):
             user=self.user,
             original_filename='test.webm',
             status='uploaded',
-            file_size_bytes=1000000
+            file_size_bytes=1000000,
+            quality='1080p',
+            fps=30
         )
         
-        self.processing_job = ProcessingJob.objects.create(
+        # Create RecordingAnalysis with transcription
+        self.analysis = RecordingAnalysis.objects.create(
             recording=self.recording,
-            status='running'
-        )
-        
-        self.transcription = Transcription.objects.create(
-            recording=self.recording,
-            full_text='Test transcription',
-            confidence_score=0.95,
-            audio_duration_seconds=10.0,
-            processing_time_seconds=1.5,
-            num_speakers=1
+            user=self.user,
+            transcription_text='Test transcription',
+            transcription_confidence=0.95,
+            transcription_audio_duration=10.0,
+            transcription_processing_time=1.5,
+            transcription_num_speakers=1,
+            transcription_segments=[{
+                'start': 0.0,
+                'end': 5.0,
+                'text': 'Test.',
+                'confidence': 0.95,
+                'speaker_id': 1,
+                'speaker_label': 'Speaker 1'
+            }]
         )
     
-    @patch('celery.chord')
+    @patch('recordings.tasks.chord')
     @patch('google.generativeai.GenerativeModel')
     def test_analyze_transcription_launches_parallel_tasks(self, mock_genai_model, mock_chord):
         """Test that analyze_transcription launches 4 parallel tasks"""
@@ -387,17 +352,14 @@ class AnalyzeTranscriptionOrchestrationTests(TestCase):
         # Verify chord was called (parallel execution)
         self.assertTrue(mock_chord.called)
         
-        # Verify processing step was created
-        step = ProcessingStep.objects.get(
-            job=self.processing_job,
-            step_name='ai_analysis'
-        )
-        self.assertEqual(step.status, 'running')
+        # Verify recording progress updated
+        self.recording.refresh_from_db()
+        self.assertEqual(self.recording.processing_progress, 80)
     
     @patch('google.generativeai.GenerativeModel')
     def test_analyze_transcription_missing_api_key(self, mock_genai_model):
         """Test failure when Gemini API key is not configured"""
-        with patch('processing.tasks.settings.GEMINI_API_KEY', None):
+        with patch('recordings.tasks.settings.GEMINI_API_KEY', None):
             with self.assertRaises(Exception) as context:
                 analyze_transcription(str(self.recording.id))
             
