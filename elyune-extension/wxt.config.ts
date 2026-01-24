@@ -12,8 +12,7 @@ export default defineConfig({
       'downloads',
       'tabCapture',
       'system.display',
-      'offscreen',
-      'microphone'
+      'offscreen'
     ],
     commands: {
       'start-recording': {
