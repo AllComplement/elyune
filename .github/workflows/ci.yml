@@ -65,9 +65,9 @@ jobs:
       - name: Verify build output
         run: |
           if [ "${{ matrix.browser }}" = "chrome" ]; then
-            ZIP_FILE="chrome-mv3.zip"
+            ZIP_FILE="elyune-1.0.0-chrome.zip"
           else
-            ZIP_FILE="firefox-mv3.zip"
+            ZIP_FILE="elyune-1.0.0-firefox.zip"
           fi
           
           echo "=== Build Output ==="
@@ -83,7 +83,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: elyune-${{ matrix.browser }}-${{ github.sha }}
-          path: elyune-extension/.output/${{ matrix.browser }}-mv3.zip
+          path: elyune-extension/.output/elyune-1.0.0-${{ matrix.browser }}.zip
           retention-days: 7
       
       - name: Install Playwright browsers
