@@ -67,7 +67,7 @@ class ApiClient {
 
     // Add authorization header if token exists
     if (this.authToken) {
-      headers['Authorization'] = `Bearer ${this.authToken}`;
+      (headers as Record<string, string>)['Authorization'] = `Bearer ${this.authToken}`;
     }
 
     try {
@@ -86,7 +86,7 @@ class ApiClient {
           this.isRefreshing = false;
 
           // Retry original request with new token
-          headers['Authorization'] = `Bearer ${this.authToken}`;
+          (headers as Record<string, string>)['Authorization'] = `Bearer ${this.authToken}`;
           const retryResponse = await fetch(url, {
             ...options,
             headers,

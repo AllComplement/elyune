@@ -205,6 +205,7 @@ interface RecordingOptions {
   fps?: number;
   audioEnabled?: boolean;
   micEnabled?: boolean;
+  micDeviceId?: string;
 }
 
 async function startRecording(options: RecordingOptions) {
@@ -230,8 +231,8 @@ async function startRecording(options: RecordingOptions) {
     // Merge options with mic preferences
     const fullOptions = {
       ...options,
-      micEnabled: options.micEnabled ?? microphoneEnabled ?? false,
-      micDeviceId: selectedMicrophoneDeviceId || undefined
+      micEnabled: options.micEnabled ?? (microphoneEnabled as boolean) ?? false,
+      micDeviceId: (selectedMicrophoneDeviceId as string) || undefined
     };
 
     // Store recording state

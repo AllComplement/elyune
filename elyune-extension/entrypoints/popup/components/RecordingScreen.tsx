@@ -14,18 +14,18 @@ export function RecordingScreen() {
   useEffect(() => {
     // Load initial state from storage
     browser.storage.local.get(['recording', 'recordingMode', 'microphoneEnabled', 'selectedMicrophoneDeviceId']).then((data) => {
-      setIsRecording(data.recording || false);
-      setMicEnabled(data.microphoneEnabled || false);
-      setSelectedDeviceId(data.selectedMicrophoneDeviceId || null);
+      setIsRecording((data.recording as boolean) || false);
+      setMicEnabled((data.microphoneEnabled as boolean) || false);
+      setSelectedDeviceId((data.selectedMicrophoneDeviceId as string) || null);
     });
 
     // Listen for state changes
-    const listener = (changes: Record<string, browser.storage.StorageChange>) => {
+    const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
       if (changes.recording) {
-        setIsRecording(changes.recording.newValue);
+        setIsRecording(changes.recording.newValue as boolean);
       }
       if (changes.microphoneEnabled) {
-        setMicEnabled(changes.microphoneEnabled.newValue);
+        setMicEnabled(changes.microphoneEnabled.newValue as boolean);
       }
     };
 
@@ -51,7 +51,7 @@ export function RecordingScreen() {
 
       // The permission page will update storage when permission is granted
       // Listen for the storage change
-      const listener = (changes: Record<string, browser.storage.StorageChange>) => {
+      const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
         if (changes.microphonePermissionGranted?.newValue === true) {
           console.log('[Popup] ✅ Permission granted in tab!');
 
@@ -66,7 +66,7 @@ export function RecordingScreen() {
             // Load selected device
             browser.storage.local.get('selectedMicrophoneDeviceId').then(data => {
               if (data.selectedMicrophoneDeviceId) {
-                setSelectedDeviceId(data.selectedMicrophoneDeviceId);
+                setSelectedDeviceId(data.selectedMicrophoneDeviceId as string);
               }
             });
           });

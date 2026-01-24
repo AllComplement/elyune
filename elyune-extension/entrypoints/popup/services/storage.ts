@@ -42,10 +42,10 @@ export async function getAuthState(): Promise<AuthState> {
   ]);
 
   return {
-    authToken: data.authToken || null,
-    refreshToken: data.refreshToken || null,
-    isAuthenticated: data.isAuthenticated || false,
-    user: data.user || null,
+    authToken: (data.authToken as string) || null,
+    refreshToken: (data.refreshToken as string) || null,
+    isAuthenticated: (data.isAuthenticated as boolean) || false,
+    user: (data.user as User) || null,
   };
 }
 
@@ -82,7 +82,7 @@ export async function clearAuthState(): Promise<void> {
  */
 export async function getBackendUrl(): Promise<string> {
   const data = await browser.storage.local.get('backendUrl');
-  return data.backendUrl || 'http://localhost:8000';
+  return (data.backendUrl as string) || 'http://localhost:8000';
 }
 
 /**
