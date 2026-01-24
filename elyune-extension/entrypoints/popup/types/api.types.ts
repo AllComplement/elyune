@@ -175,6 +175,7 @@ export interface Recording {
   // Nested relationships (NEW in refactored backend)
   files: RecordingFile[];
   analysis?: RecordingAnalysis | null; // Null if not yet processed
+  video_url?: string | null; // Presigned URL for MP4 video (1 hour expiry)
 }
 
 /**

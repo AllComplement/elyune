@@ -1,5 +1,8 @@
 from rest_framework import serializers
 from .models import Recording, RecordingFile, RecordingAnalysis
+import boto3
+from django.conf import settings
+from botocore.exceptions import ClientError
 
 
 class RecordingFileSerializer(serializers.ModelSerializer):
@@ -66,6 +69,7 @@ class RecordingSerializer(serializers.ModelSerializer):
     files = RecordingFileSerializer(many=True, read_only=True)
     user = serializers.StringRelatedField(read_only=True)
     analysis = RecordingAnalysisSerializer(read_only=True)
+    video_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Recording
@@ -74,12 +78,58 @@ class RecordingSerializer(serializers.ModelSerializer):
             'has_system_audio', 'has_microphone', 'original_filename',
             'file_size_bytes', 'mime_type', 'codec', 'status',
             'error_message', 'processing_progress', 'processing_started_at',
-            'files', 'analysis', 'created_at', 'updated_at', 'completed_at'
+            'files', 'analysis', 'video_url', 'created_at', 'updated_at', 'completed_at'
         ]
         read_only_fields = [
             'id', 'user', 'status', 'error_message', 'processing_progress',
-            'processing_started_at', 'created_at', 'updated_at', 'completed_at'
+            'processing_started_at', 'video_url', 'created_at', 'updated_at', 'completed_at'
         ]
+
+    def get_video_url(self, obj):
+        """
+        Generate presigned URL for the MP4 video file.
+        Returns None if video is not available yet.
+        Uses prefetched files to avoid extra query.
+        """
+        try:
+            # Use prefetched files to avoid extra query
+            # obj.files is already loaded via prefetch_related in viewset
+            mp4_file = None
+            for file in obj.files.all():
+                if file.file_type == 'converted_mp4':
+                    mp4_file = file
+                    break
+            
+            if not mp4_file:
+                return None
+            
+            # Initialize S3 client with public endpoint for browser access
+            s3_client_public = boto3.client(
+                's3',
+                endpoint_url=settings.AWS_S3_PUBLIC_ENDPOINT_URL,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                config=boto3.session.Config(signature_version='s3v4')
+            )
+            
+            # Generate presigned URL for GET operation (1 hour expiry)
+            presigned_url = s3_client_public.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': mp4_file.s3_bucket,
+                    'Key': mp4_file.s3_key,
+                },
+                ExpiresIn=3600  # 1 hour
+            )
+            
+            return presigned_url
+            
+        except (ClientError, Exception) as e:
+            # Log error but don't fail the entire serialization
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to generate presigned URL for recording {obj.id}: {e}")
+            return None
 
 
 class RecordingListSerializer(serializers.ModelSerializer):

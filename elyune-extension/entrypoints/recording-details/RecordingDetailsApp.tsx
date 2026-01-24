@@ -45,12 +45,9 @@ export function RecordingDetailsApp() {
       const recordingData = await apiClient.getRecording(recordingId);
       setRecording(recordingData);
 
-      // Get video URL if available
-      const mp4File = recordingData.files.find((f: any) => f.file_type === 'converted_mp4');
-      if (mp4File) {
-        // In a real implementation, you'd get a presigned URL from the backend
-        // For now, we'll construct the URL (this needs backend support)
-        setVideoUrl(`${backendUrl}/api/v1/recordings/${recordingId}/video/`);
+      // Video URL is now included in the API response
+      if (recordingData.video_url) {
+        setVideoUrl(recordingData.video_url);
       }
 
     } catch (err) {
